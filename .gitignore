@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+.wrangler/
+
+# Internal docs - not part of the public repo
+docs/
+CLAUDE.md

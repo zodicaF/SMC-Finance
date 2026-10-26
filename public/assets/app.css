@@ -1,0 +1,299 @@
+/* Layout and base components. Logical properties only (inline-start/end), so Arabic (rtl)
+   and English (ltr) use the same rules. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+/* Letter-spacing breaks the joined letters of Arabic, so it is switched off there. */
+html[lang='ar'] .eyebrow {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  color: var(--navy-deep);
+  line-height: 1.3;
+  text-wrap: balance;
+}
+p {
+  margin: 0;
+}
+a {
+  color: var(--blue);
+}
+.mono {
+  font-family: var(--font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.muted {
+  color: var(--ink-soft);
+}
+
+:focus-visible {
+  outline: 3px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.app {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: 24px 16px 80px;
+}
+
+/* header */
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 14px;
+  border-bottom: 3px double var(--navy-deep);
+}
+.eyebrow {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--brass-deep);
+}
+.masthead h1 {
+  font-size: 28px;
+  font-weight: 700;
+}
+.sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lang-toggle {
+  display: flex;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lang-toggle button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  font: 600 12.5px var(--font-mono);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.lang-toggle button[aria-pressed='true'] {
+  background: var(--navy-deep);
+  color: #fff;
+}
+
+/* buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: 600 14px var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn.primary {
+  background: var(--navy-deep);
+  border-color: var(--navy-deep);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--navy-mid);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* tabs */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.tab[aria-current='page'] {
+  background: var(--navy-deep);
+  border-color: var(--navy-deep);
+  color: #fff;
+}
+
+/* panels */
+.panel {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.panel.empty {
+  justify-items: start;
+}
+
+/* status pills: colour plus text, never colour alone */
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+}
+.pill.warn {
+  background: var(--amber-soft);
+  color: var(--amber-deep);
+}
+.pill.ok {
+  background: var(--green-soft);
+  color: var(--green-deep);
+}
+.pill.bad {
+  background: var(--red-soft);
+  color: var(--red-deep);
+}
+.pill.info {
+  background: var(--blue-soft);
+  color: var(--blue-deep);
+}
+.pill.dark {
+  background: var(--navy-deep);
+  color: #fff;
+}
+
+/* "Skip to content": hidden until a keyboard user tabs to it */
+.skip-link {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -60px;
+  z-index: 2000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--navy-deep);
+  color: #fff;
+  font-weight: 600;
+}
+.skip-link:focus {
+  top: 8px;
+}
+main:focus {
+  outline: none;
+}
+
+/* Phone: compact header, tabs in a bar at the bottom within thumb reach, 44 px targets */
+@media (max-width: 620px) {
+  .app {
+    padding: 12px 12px 104px;
+  }
+  .masthead {
+    align-items: flex-start;
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+  .masthead h1 {
+    font-size: 21px;
+  }
+  .eyebrow,
+  .sub {
+    display: none;
+  }
+  .head-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .user-pill {
+    flex-wrap: wrap;
+  }
+  .tabs {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 50;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 4px;
+    margin: 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 14px rgba(13, 27, 48, 0.08);
+  }
+  .tab {
+    justify-content: center;
+    min-height: 48px;
+    padding: 2px 4px;
+    border-color: transparent;
+    font-size: 12.5px;
+    line-height: 1.25;
+    text-align: center;
+  }
+  .tab .count-badge {
+    margin-inline-start: 4px;
+  }
+  .lang-toggle button {
+    min-height: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* anything smaller makes iPhones zoom in when a field is focused */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
