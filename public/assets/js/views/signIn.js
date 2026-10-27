@@ -14,7 +14,15 @@ export function renderSignIn(container, { choices }) {
   const lang = getLang();
   mount(
     container,
-    html`<main class="signin">
+    html`<header class="masthead">
+        <div class="brand">
+          <img class="brand-logo" src="assets/smc-logo.png" alt="SMC Group" />
+          <span class="brand-divider"></span>
+          <p class="wordmark">${t('app.wordmark')}</p>
+        </div>
+      </header>
+      <div class="entity-stripe"><span></span><span></span><span></span></div>
+      <main class="signin">
         <section class="panel signin-card">
           <div class="signin-top">
             <p class="eyebrow">${t('app.eyebrow')}</p>
@@ -48,6 +56,7 @@ export function renderSignIn(container, { choices }) {
           </ul>
           <button type="button" class="link" data-action="reset">${t('auth.reset')}</button>
         </section>
-      </main>`,
+      </main>
+      <footer class="site-footer">${t('app.footer', { year: String(new Date().getFullYear()) })}</footer>`,
   );
 }

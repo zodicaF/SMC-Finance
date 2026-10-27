@@ -4,11 +4,12 @@
 // are text. Creators only ever get their own requests (the service decides, not this screen).
 
 import { buildXlsx } from '../domain/xlsx.js';
+import { riyadhYmd } from '../domain/time.js';
 import { downloadFile, XLSX_MIME } from '../ui/download.js';
 import { showToast } from '../ui/toast.js';
 import { errorText } from '../ui/errors.js';
 import { t, getLang } from '../i18n/index.js';
-import { categoryLabel, joinNames, personName } from '../i18n/labels.js';
+import { accountLabel, categoryLabel, joinNames, personName } from '../i18n/labels.js';
 import { REASONS, labelOf } from '../data/lookups.js';
 
 /** @typedef {import('../domain/xlsx.js').Column} Column */
@@ -19,6 +20,8 @@ const COLUMNS = [
   ['status', 'text', 18],
   ['created', 'date', 18],
   ['createdBy', 'text', 22],
+  ['fromAccount', 'text', 40],
+  ['requesterName', 'text', 24],
   ['beneficiary', 'text', 30],
   ['bank', 'text', 22],
   ['iban', 'text', 30],
@@ -61,6 +64,8 @@ export function exportRows(data, lang) {
     status: t(`status.${r.status}`),
     created: r.createdAt,
     createdBy: who(r.createdById),
+    fromAccount: accountLabel(r.fromAccountId),
+    requesterName: r.requesterName,
     beneficiary: r.beneficiary,
     bank: r.bank,
     iban: r.iban,
@@ -120,7 +125,8 @@ export async function exportToExcel(ctx, ids) {
       })),
       rows: exportRows(data, lang),
     });
-    downloadFile(file, `${t('export.file')}-${data.nowIso.slice(0, 10)}.xlsx`, XLSX_MIME);
+    const day = riyadhYmd(data.nowIso).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+    downloadFile(file, `${t('export.file')}-${day}.xlsx`, XLSX_MIME);
     showToast(t('export.done', { n: data.items.length }));
   } catch (err) {
     showToast(errorText(err), { error: true });

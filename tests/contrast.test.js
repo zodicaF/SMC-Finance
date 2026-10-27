@@ -19,31 +19,30 @@ const ratio = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
+// Text/background pairs actually used in the app, per the SMC Portals Brand Guideline's
+// colour tokens (public/assets/tokens.css). `entity-smc` (yellow) is excluded on purpose:
+// the guideline itself flags it as only 1.1:1 on white, and it is only ever used as a
+// stripe/avatar fill, never as a text colour.
 const PAIRS = [
-  ['ink', 'paper'],
-  ['ink', 'card'],
-  ['ink-soft', 'paper'],
-  ['ink-soft', 'card'],
-  ['ink-soft', 'paper-deep'],
-  ['ink-soft', 'red-soft'],
-  ['ink-faint', 'paper'],
-  ['ink-faint', 'card'],
-  ['ink-faint', 'paper-deep'],
-  ['brass-deep', 'paper'],
-  ['brass-deep', 'card'],
-  ['brass-deep', 'brass-soft'],
-  ['brass-soft', 'navy-deep'],
-  ['blue', 'card'],
-  ['blue', 'paper'],
-  ['green-deep', 'green-soft'],
-  ['amber-deep', 'amber-soft'],
-  ['red-deep', 'red-soft'],
-  ['blue-deep', 'blue-soft'],
-  ['red', 'card'],
-  ['white', 'red'],
-  ['white', 'navy-deep'],
-  ['white', 'red-deep'],
-  ['white', 'navy-mid'],
+  ['ink', 'surface-page'],
+  ['ink', 'surface-card'],
+  ['ink', 'surface-sunken'],
+  ['ink', 'accent-soft'],
+  ['ink-2', 'surface-page'],
+  ['ink-2', 'surface-card'],
+  ['ink-muted', 'surface-page'],
+  ['ink-muted', 'surface-card'],
+  ['accent', 'surface-card'],
+  ['accent', 'surface-page'],
+  ['on-accent', 'accent'],
+  ['on-accent', 'accent-hover'],
+  ['accent-ink', 'accent-soft'],
+  ['success-ink', 'success-bg'],
+  ['warning-ink', 'warning-bg'],
+  ['warning-panel-ink', 'warning-panel'],
+  ['danger-ink', 'danger-bg'],
+  ['danger-ink', 'surface-card'],
+  ['on-accent', 'danger-ink'],
 ];
 
 describe('colour contrast', () => {

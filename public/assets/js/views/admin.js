@@ -1,7 +1,5 @@
 // @ts-check
-// S7 - administration (admin only): people and roles, exchange rates, settings, and clearing
-// the example data. Changing a rate applies to new requests and resubmissions only: stored
-// rates on existing requests are never touched.
+// S7 - administration (admin only): people and roles, settings, and clearing the example data.
 
 import { html } from '../ui/html.js';
 import { mount, delegate } from '../ui/dom.js';
@@ -10,22 +8,30 @@ import { openFormDialog, fieldError } from '../ui/formDialog.js';
 import { showToast } from '../ui/toast.js';
 import { errorText } from '../ui/errors.js';
 import { t, getLang } from '../i18n/index.js';
-import { fmtDate } from '../i18n/format.js';
 import { personName } from '../i18n/labels.js';
-import { ROLES } from '../data/lookups.js';
+import { DEFAULT_SETTINGS, ROLES } from '../data/lookups.js';
 
 /** Remembered while the page stays open. */
 let section = 'users';
 let search = '';
 
-const SECTIONS = ['users', 'rates', 'settings'];
+const SECTIONS = ['users', 'settings'];
 
 /** @param {HTMLElement} root @param {string} id */
 const field = (root, id) => /** @type {any} */ (root.querySelector(`#${id}`));
 
 /** @param {string} role */
 const rolePill = (role) =>
-  html`<span class="pill ${role === 'admin' ? 'dark' : role === 'approver' ? 'ok' : role === 'bank_ops' ? 'info' : ''}"
+  html`<span
+    class="pill ${
+      role === 'admin'
+        ? 'warn'
+        : role === 'bank_ops'
+          ? 'info'
+          : role === 'senior_approver' || role === 'manager_approver'
+            ? 'ok'
+            : ''
+    }"
     >${t(`role.${role}`)}</span
   >`;
 
@@ -62,13 +68,6 @@ export function render(container, ctx) {
     </section>`,
   );
   const body = /** @type {HTMLElement} */ (container.querySelector('#admin-body'));
-
-  /** @param {string} id */
-  const nameOf = (id) =>
-    personName(
-      data?.users.find((u) => u.id === id),
-      lang,
-    );
 
   function markTabs() {
     container.querySelectorAll('.subtab').forEach((b) => {
@@ -254,61 +253,6 @@ export function render(container, ctx) {
     }
   }
 
-  // ---- exchange rates -----------------------------------------------------------------------
-
-  /** @param {NonNullable<typeof data>} d */
-  function ratesView(d) {
-    return html`<p class="muted">${t('admin.ratesHint')}</p>
-      <div class="panel table-wrap">
-        <table class="grid">
-          <thead>
-            <tr>
-              <th>${t('admin.colCurrency')}</th>
-              <th>${t('admin.colRate')}</th>
-              <th>${t('admin.colUpdated')}</th>
-              <th><span class="visually-hidden">${t('common.save')}</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${d.rates.map(
-              (r) => html`<tr>
-                <td class="mono"><b>${r.currency}</b></td>
-                <td>
-                  <input
-                    id="rate-${r.currency}"
-                    class="mono"
-                    inputmode="decimal"
-                    dir="ltr"
-                    value="${r.rateToSar}"
-                    ${r.currency === 'SAR' ? 'disabled' : ''}
-                    aria-label="${t('admin.colRate')} ${r.currency}"
-                  />
-                </td>
-                <td class="muted small">
-                  ${fmtDate(r.updatedAt, lang)}${r.updatedById ? html` · ${nameOf(r.updatedById)}` : ''}
-                </td>
-                <td>
-                  ${
-                    r.currency === 'SAR'
-                      ? ''
-                      : html`<button type="button" class="btn small primary" data-action="save-rate" data-currency="${r.currency}">
-                        ${t('common.save')}
-                      </button>`
-                  }
-                </td>
-              </tr>`,
-            )}
-          </tbody>
-        </table>
-      </div>`;
-  }
-
-  /** @param {string} currency */
-  async function saveRate(currency) {
-    const rate = Number(field(container, `rate-${currency}`).value);
-    await run(() => services.saveFxRate(user, currency, rate), 'admin.rateSaved');
-  }
-
   // ---- settings and sample data ---------------------------------------------------------------
 
   /** @param {NonNullable<typeof data>} d */
@@ -316,11 +260,11 @@ export function render(container, ctx) {
     return html`<div class="panel admin-settings">
         <div class="field">
           <label for="set-stalledDays">${t('admin.stalledDays')}</label>
-          <input id="set-stalledDays" class="mono" inputmode="numeric" dir="ltr" value="${d.settings.stalledDays ?? '3'}" />
+          <input id="set-stalledDays" class="mono" inputmode="numeric" dir="ltr" value="${d.settings.stalledDays ?? String(DEFAULT_SETTINGS.stalledDays)}" />
         </div>
         <div class="field">
           <label for="set-maxFileMb">${t('admin.maxFileMb')}</label>
-          <input id="set-maxFileMb" class="mono" inputmode="numeric" dir="ltr" value="${d.settings.maxFileMb ?? '10'}" />
+          <input id="set-maxFileMb" class="mono" inputmode="numeric" dir="ltr" value="${d.settings.maxFileMb ?? String(DEFAULT_SETTINGS.maxFileMb)}" />
         </div>
         <div class="stage-actions">
           <button type="button" class="btn primary" data-action="save-settings">${t('common.save')}</button>
@@ -377,12 +321,7 @@ export function render(container, ctx) {
   function draw() {
     if (!data) return;
     markTabs();
-    const view =
-      section === 'rates'
-        ? ratesView(data)
-        : section === 'settings'
-          ? settingsView(data)
-          : usersView(data);
+    const view = section === 'settings' ? settingsView(data) : usersView(data);
     mount(body, view);
   }
 
@@ -420,9 +359,6 @@ export function render(container, ctx) {
     },
     'delete-user': (btn) => {
       if (btn.dataset.id) deleteUserConfirm(btn.dataset.id);
-    },
-    'save-rate': (btn) => {
-      saveRate(btn.dataset.currency ?? '');
     },
     'save-settings': () => {
       saveSettings();

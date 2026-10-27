@@ -5,7 +5,7 @@
 import { html } from '../html.js';
 import { statusPill, stalledPill } from './statusPill.js';
 import { t } from '../../i18n/index.js';
-import { fmtAmount, fmtDate } from '../../i18n/format.js';
+import { fmtAmount, fmtDate, fmtNumber } from '../../i18n/format.js';
 import { personName, categoryLabel } from '../../i18n/labels.js';
 import { requestHash } from '../../router.js';
 
@@ -13,11 +13,11 @@ import { requestHash } from '../../router.js';
  * @param {import('../../domain/board.js').BoardItem} item
  * @param {{users: Record<string, import('../../data/typedefs.js').User>, lang: 'ar' | 'en'}} ctx
  */
-function contextLine(item, { users, lang }) {
+function contextLine(item, { lang }) {
   const r = item.request;
   switch (r.status) {
     case 'submitted':
-      return html`${categoryLabel(r.category, lang)} · ${personName(users[r.createdById], lang)}`;
+      return html`${categoryLabel(r.category, lang)}`;
     case 'bank_created': {
       const awaiting = t('card.awaitingApproval');
       return r.currency === 'SAR'
@@ -44,13 +44,22 @@ function contextLine(item, { users, lang }) {
  */
 export function requestCard(item, ctx) {
   const r = item.request;
-  return html`<a class="card${item.stalled ? ' stalled' : ''}" href="${requestHash(r.ref)}">
-    <span class="card-ref mono">${r.ref}</span>
-    <span class="card-ben">${r.beneficiary}</span>
-    <span class="card-amt mono">${fmtAmount(r.amount, r.currency)}</span>
-    <span class="card-ctx">${contextLine(item, ctx)}</span>
-    <span class="card-pills"
-      >${statusPill(r.status, item.progress)}${item.stalled ? stalledPill(item.workingDays) : ''}</span
+  const cls = `card${item.stalled ? ' stalled' : ''}${r.status === 'returned' ? ' returned' : ''}`;
+  return html`<a class="${cls}" href="${requestHash(r.ref)}" data-status="${r.status}">
+    <span class="card-top">
+      <span class="card-ben">${r.beneficiary}</span>
+      <span class="card-pills"
+        >${statusPill(r.status, item.progress)}${item.stalled ? stalledPill(item.workingDays) : ''}</span
+      >
+    </span>
+    <span class="card-amt"
+      ><bdi dir="ltr"><span class="mono">${fmtNumber(r.amount)}</span>
+      <span class="card-cur">${r.currency}</span></bdi></span
     >
+    <span class="card-ctx">${contextLine(item, ctx)}</span>
+    <span class="card-foot">
+      <span class="card-ref mono">${r.ref}</span>
+      <span class="card-who">${personName(ctx.users[r.createdById], ctx.lang)}</span>
+    </span>
   </a>`;
 }

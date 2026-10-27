@@ -9,6 +9,7 @@ import {
   pdf,
   baseInput,
   errorKey,
+  USD_ACCOUNT_ID,
 } from './helpers.js';
 import { ConflictError } from '../public/assets/js/domain/errors.js';
 
@@ -19,7 +20,7 @@ beforeEach(async () => {
 
 describe('creating a request', () => {
   it('creates a Submitted request with a reference, the SAR amount and a log line', async () => {
-    const r = await newRequest(w, { currency: 'USD', amount: 400000 });
+    const r = await newRequest(w, { fromAccountId: USD_ACCOUNT_ID, amount: 400000 });
     expect(r.status).toBe('submitted');
     expect(r.ref).toBe('TRF-20261018-0001');
     expect(r.amountSar).toBe(1500000);
@@ -60,7 +61,7 @@ describe('creating a request', () => {
 });
 
 describe('bank entry', () => {
-  it('needs proof and moves to Created in bank with one pending approval row', async () => {
+  it('needs proof and moves to Created in bank with two pending approval rows', async () => {
     const r = await newRequest(w);
     expect(await errorKey(w.svc.markBankCreated(w.who.anfal, r.id, []))).toBe(
       'validation.bankProof',
@@ -69,7 +70,10 @@ describe('bank entry', () => {
     expect(saved.status).toBe('bank_created');
     expect(saved.bankCreatedById).toBe(w.who.anfal.id);
     const rows = await w.repo.listApprovals(r.id);
-    expect(rows.map((a) => [a.stageOrder, a.status])).toEqual([[1, 'pending']]);
+    expect(rows.map((a) => [a.stageOrder, a.status, a.assignedToId])).toEqual([
+      [1, 'pending', w.who.husni.id],
+      [2, 'pending', null],
+    ]);
   });
 
   it('only bank ops can do it', async () => {
@@ -82,25 +86,43 @@ describe('bank entry', () => {
     );
   });
 
-  it('every amount needs exactly one approval', async () => {
+  it('every amount needs exactly two approval stages', async () => {
     const big = await inBank(w, { amount: 2000000 });
-    expect(await w.repo.listApprovals(big.id)).toHaveLength(1);
+    expect(await w.repo.listApprovals(big.id)).toHaveLength(2);
     const small = await inBank(w, { amount: 10 });
-    expect(await w.repo.listApprovals(small.id)).toHaveLength(1);
+    expect(await w.repo.listApprovals(small.id)).toHaveLength(2);
   });
 });
 
 describe('deciding stages', () => {
-  it('approving the single stage moves straight to Ready', async () => {
+  it('approving the senior stage moves to Approving, then the manager stage moves to Ready', async () => {
     const r = await inBank(w);
     const a = await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
+    expect(a.status).toBe('approving');
+    const b = await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
+    expect(b.status).toBe('ready');
+  });
+
+  it('only the senior approver the requester assigned may decide stage 1', async () => {
+    const r = await inBank(w); // assigned to Husni by default
+    expect(await errorKey(w.svc.decideStage(w.who.msayed, r.id, 1, 'approve'))).toBe(
+      'errors.notYourStage',
+    );
+    expect((await w.svc.decideStage(w.who.husni, r.id, 1, 'approve')).status).toBe('approving');
+  });
+
+  it('any manager approver can decide stage 2, not only one in particular', async () => {
+    const r = await inBank(w);
+    await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
+    const a = await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
     expect(a.status).toBe('ready');
   });
 
-  it('any approver can decide, not only one in particular', async () => {
+  it('stage 2 cannot be decided before stage 1 is approved', async () => {
     const r = await inBank(w);
-    const a = await w.svc.decideStage(w.who.msayed, r.id, 1, 'approve');
-    expect(a.status).toBe('ready');
+    expect(await errorKey(w.svc.decideStage(w.who.kharji, r.id, 2, 'approve'))).toBe(
+      'errors.stageLocked',
+    );
   });
 
   it('bank ops and creators cannot decide', async () => {
@@ -109,25 +131,43 @@ describe('deciding stages', () => {
       'errors.notYourStage',
     );
     expect(await errorKey(w.svc.decideStage(w.who.ahmed, r.id, 1, 'approve'))).toBe(
-      'errors.notYourStage',
+      'errors.ownRequest',
     );
   });
 
   it('a creator cannot decide a stage on their own request', async () => {
     // Husni creates a request himself (he also holds the creator role here)
-    const husni = { ...w.who.husni, roles: ['approver', 'creator'] };
+    const husni = { ...w.who.husni, roles: ['senior_approver', 'creator'] };
     await w.repo.saveUser(husni);
-    const r = await w.svc.createRequest(husni, baseInput(), [pdf()]);
+    const self = await w.svc
+      .createRequest(husni, baseInput({ seniorApproverId: husni.id }), [pdf()])
+      .catch((e) => e);
+    expect(self.params.fields.seniorApproverId).toBe('validation.selfApprover');
+    const form = await w.svc.getFormContext(husni);
+    expect(form.seniorApprovers.map((u) => u.id)).not.toContain(husni.id);
+
+    const r = await w.svc.createRequest(
+      husni,
+      baseInput({ seniorApproverId: w.who.msayed.id }),
+      [pdf()],
+    );
     await w.svc.markBankCreated(w.who.anfal, r.id, [pdf()]);
     expect(await errorKey(w.svc.decideStage(husni, r.id, 1, 'approve'))).toBe('errors.ownRequest');
+  });
+
+  it('only "approve" or "reject" is a decision', async () => {
+    const r = await inBank(w);
+    expect(await errorKey(w.svc.decideStage(w.who.husni, r.id, 1, 'maybe'))).toBe(
+      'errors.badDecision',
+    );
+    expect((await w.repo.listApprovals(r.id)).every((a) => a.status === 'pending')).toBe(true);
   });
 
   it('a stage cannot be decided twice', async () => {
     const r = await inBank(w);
     await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
-    // the request already left the approval phase once decided
-    expect(await errorKey(w.svc.decideStage(w.who.msayed, r.id, 1, 'approve'))).toBe(
-      'errors.wrongStatus',
+    expect(await errorKey(w.svc.decideStage(w.who.husni, r.id, 1, 'approve'))).toBe(
+      'errors.stageDecided',
     );
   });
 
@@ -150,7 +190,7 @@ describe('deciding stages', () => {
 
   it('a rejection returns the request with the reason', async () => {
     const r = await inBank(w);
-    const saved = await w.svc.decideStage(w.who.msayed, r.id, 1, 'reject', 'IBAN does not match');
+    const saved = await w.svc.decideStage(w.who.husni, r.id, 1, 'reject', 'IBAN does not match');
     expect(saved.status).toBe('returned');
     expect(saved.closedReason).toBe('IBAN does not match');
   });
@@ -158,10 +198,11 @@ describe('deciding stages', () => {
   it('shows the request in My approvals until decided, and never for its creator', async () => {
     const r = await inBank(w);
     expect((await w.svc.myApprovals(w.who.husni)).map((i) => i.request.id)).toEqual([r.id]);
-    expect((await w.svc.myApprovals(w.who.kharji)).map((i) => i.request.id)).toEqual([r.id]);
+    // the manager stage is locked until the senior stage is approved
+    expect(await w.svc.myApprovals(w.who.kharji)).toEqual([]);
     await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
     expect(await w.svc.myApprovals(w.who.husni)).toEqual([]);
-    expect(await w.svc.myApprovals(w.who.kharji)).toEqual([]);
+    expect((await w.svc.myApprovals(w.who.kharji)).map((i) => i.request.id)).toEqual([r.id]);
   });
 
   it('is empty for someone without the approver role', async () => {
@@ -184,7 +225,7 @@ describe('recording on behalf', () => {
       '',
       pdf('email.pdf'),
     );
-    expect(saved.status).toBe('ready');
+    expect(saved.status).toBe('approving');
     const row = (await w.repo.listApprovals(r.id)).find((a) => a.stageOrder === 1);
     expect(row.onBehalf).toBe(true);
     expect(row.decidedById).toBe(w.who.fatima.id);
@@ -192,6 +233,8 @@ describe('recording on behalf', () => {
     expect(files.find((f) => f.id === row.evidenceId).kind).toBe('approval_evidence');
     const log = await w.repo.listLog(r.id);
     expect(log.at(-1).action).toBe('approved_on_behalf');
+    const ready = await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
+    expect(ready.status).toBe('ready');
   });
 
   it("is not allowed for anyone but bank ops, nor on the bank ops user's own request", async () => {
@@ -204,6 +247,17 @@ describe('recording on behalf', () => {
     expect(
       await errorKey(w.svc.recordOnBehalf(w.who.fatima, own.id, 1, 'approve', '', pdf())),
     ).toBe('errors.ownRequest');
+  });
+
+  it('is never allowed for the manager approval; the manager decides it in person', async () => {
+    const r = await inBank(w);
+    await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
+    expect(
+      await errorKey(w.svc.recordOnBehalf(w.who.fatima, r.id, 2, 'approve', '', pdf())),
+    ).toBe('errors.managerInPerson');
+    const row = (await w.repo.listApprovals(r.id)).find((a) => a.stageOrder === 2);
+    expect(row.status).toBe('pending');
+    expect((await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve')).status).toBe('ready');
   });
 });
 
@@ -220,9 +274,9 @@ describe('return and resubmit', () => {
     expect(saved.round).toBe(2);
     expect(saved.closedReason).toBeNull();
     const rows = await w.repo.listApprovals(r.id);
-    expect(rows.filter((x) => x.round === 1)).toHaveLength(1); // history is kept
+    expect(rows.filter((x) => x.round === 1)).toHaveLength(2); // history is kept
     const fresh = rows.filter((x) => x.round === 2);
-    expect(fresh.map((x) => x.status)).toEqual(['pending']);
+    expect(fresh.map((x) => x.status)).toEqual(['pending', 'pending']);
   });
 
   it('with a changed IBAN goes back to bank ops and clears the bank entry', async () => {
@@ -233,6 +287,26 @@ describe('return and resubmit', () => {
     expect(saved.round).toBe(2);
     expect(saved.bankCreatedAt).toBeNull();
     expect(saved.bankedDetails).toBeNull();
+  });
+
+  it('after new payment details, bank ops must prove the new bank entry again', async () => {
+    const r = await returned();
+    await w.svc.updateRequest(w.who.ahmed, r.id, baseInput({ iban: 'SA1220000001234567891519' }));
+    await w.svc.resubmit(w.who.ahmed, r.id);
+    // round 1's proof is still attached, but it doesn't count for round 2
+    expect(await errorKey(w.svc.markBankCreated(w.who.anfal, r.id, []))).toBe(
+      'validation.bankProof',
+    );
+    await w.svc.addAttachment(w.who.anfal, r.id, 'bank_proof', [pdf('new-entry.pdf')]);
+    expect((await w.svc.markBankCreated(w.who.anfal, r.id, [])).status).toBe('bank_created');
+    const proofs = (await w.repo.listAttachments(r.id)).filter((a) => a.kind === 'bank_proof');
+    expect(proofs.map((a) => a.round ?? 1).sort()).toEqual([1, 2]);
+  });
+
+  it('a changed paying account goes back to bank ops', async () => {
+    const r = await returned();
+    await w.svc.updateRequest(w.who.ahmed, r.id, baseInput({ fromAccountId: '011-713724-002' }));
+    expect((await w.svc.resubmit(w.who.ahmed, r.id)).status).toBe('submitted');
   });
 
   it('a changed amount also goes back to bank ops', async () => {
@@ -261,7 +335,7 @@ describe('editing', () => {
     const saved = await w.svc.updateRequest(
       w.who.ahmed,
       r.id,
-      baseInput({ amount: 400000, currency: 'USD' }),
+      baseInput({ amount: 400000, fromAccountId: USD_ACCOUNT_ID }),
     );
     expect(saved.amountSar).toBe(1500000);
     expect(saved.version).toBe(2);
@@ -412,6 +486,21 @@ describe('cancel and delete', () => {
     const banked = await inBank(w);
     expect(await errorKey(w.svc.deleteRequest(w.who.fatima, banked.id))).toBe('errors.wrongStatus');
   });
+
+  it('delete: refused from an older copy, and never after a resubmit', async () => {
+    const r = await newRequest(w);
+    await w.svc.updateRequest(w.who.ahmed, r.id, baseInput({ purpose: 'changed meanwhile' }));
+    await expect(w.svc.deleteRequest(w.who.fatima, r.id, r.version)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+
+    const back = await inBank(w);
+    await w.svc.decideStage(w.who.husni, back.id, 1, 'reject', 'Wrong beneficiary bank');
+    await w.svc.updateRequest(w.who.ahmed, back.id, baseInput({ iban: 'SA1220000001234567891519' }));
+    const resubmitted = await w.svc.resubmit(w.who.ahmed, back.id);
+    expect([resubmitted.status, resubmitted.bankCreatedAt]).toEqual(['submitted', null]);
+    expect(await errorKey(w.svc.deleteRequest(w.who.fatima, back.id))).toBe('errors.wrongStatus');
+  });
 });
 
 describe('two people acting at once', () => {
@@ -440,6 +529,7 @@ describe('the whole story', () => {
     const r = await newRequest(w, { amount: 1850000, bank: 'Al Rajhi Bank' });
     await w.svc.markBankCreated(w.who.anfal, r.id, [pdf('bank.pdf')]);
     await w.svc.recordOnBehalf(w.who.fatima, r.id, 1, 'approve', '', pdf('email.pdf'));
+    await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
     const done = await w.svc.markTransferred(w.who.anfal, r.id, 'FT2630155', [pdf('receipt.pdf')]);
     expect(done.status).toBe('transferred');
     const detail = await w.svc.getRequestDetail(w.who.ahmed, r.ref);
@@ -447,6 +537,7 @@ describe('the whole story', () => {
       'created',
       'bank_created',
       'approved_on_behalf',
+      'approved',
       'transferred',
     ]);
     expect(detail.attachments.map((a) => a.kind).sort()).toEqual([
@@ -478,8 +569,21 @@ describe('admin', () => {
   });
 
   it('a changed rate does not alter an existing request', async () => {
-    const r = await inBank(w, { currency: 'USD', amount: 100000 });
+    const r = await inBank(w, { fromAccountId: USD_ACCOUNT_ID, amount: 100000 });
     await w.svc.saveFxRate(w.who.fatima, 'USD', 4);
     expect((await w.repo.getRequestById(r.id)).amountSar).toBe(375000);
+  });
+
+  it('editing keeps the rate taken at creation unless the currency changes', async () => {
+    const r = await newRequest(w, { fromAccountId: USD_ACCOUNT_ID, amount: 1000 });
+    await w.svc.saveFxRate(w.who.fatima, 'USD', 4);
+    const sameCurrency = await w.svc.updateRequest(
+      w.who.ahmed,
+      r.id,
+      baseInput({ fromAccountId: USD_ACCOUNT_ID, amount: 2000 }),
+    );
+    expect([sameCurrency.fxRate, sameCurrency.amountSar]).toEqual([3.75, 7500]);
+    const toSar = await w.svc.updateRequest(w.who.ahmed, r.id, baseInput({ amount: 2000 }));
+    expect([toSar.currency, toSar.fxRate, toSar.amountSar]).toEqual(['SAR', 1, 2000]);
   });
 });

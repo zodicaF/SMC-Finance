@@ -6,6 +6,7 @@ import { denyReason } from '../domain/permissions.js';
 import { currentRoundRows, approvalProgress, isStalled } from '../domain/rules.js';
 import { workingDaysBetween } from '../domain/time.js';
 import { isFinal } from '../domain/status.js';
+import { approvalsByRequest, stalledDaysOf } from './context.js';
 
 /** @typedef {import('./context.js').Deps} Deps */
 /** @typedef {import('../data/typedefs.js').User} User */
@@ -27,17 +28,15 @@ export function createExportServices(deps) {
       repo.getSettings(),
     ]);
     const nowIso = clock();
-    const stalledDays = Number(settings.stalledDays) > 0 ? Number(settings.stalledDays) : 3;
+    const stalledDays = stalledDaysOf(settings);
+    const byRequest = approvalsByRequest(approvals);
     const wanted = ids ? new Set(ids) : null;
     const bankById = Object.fromEntries(statuses.map((s) => [s.requestId, s]));
     const items = requests
       .filter((r) => denyReason('view', actor, r) === null && (!wanted || wanted.has(r.id)))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((request) => {
-        const rows = currentRoundRows(
-          approvals.filter((a) => a.requestId === request.id),
-          request.round,
-        );
+        const rows = currentRoundRows(byRequest[request.id] ?? [], request.round);
         return {
           request,
           progress: approvalProgress(rows),

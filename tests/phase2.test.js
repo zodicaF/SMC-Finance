@@ -2,20 +2,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeWorld, newRequest, inBank, ready, pdf } from './helpers.js';
+import { makeWorld, newRequest, inBank, ready, pdf, errorKey, USD_ACCOUNT_ID } from './helpers.js';
 import { parseAmountInput } from '../public/assets/js/domain/money.js';
 import {
+  activeFilterCount,
   applyFilters,
   boardStats,
   buildColumns,
   defaultFilters,
   hasActiveFilters,
+  sortItems,
 } from '../public/assets/js/domain/board.js';
 import { createDevAuthProvider } from '../public/assets/js/auth/devAuthProvider.js';
 import { dictionaryKeys } from '../public/assets/js/i18n/index.js';
 import { ar } from '../public/assets/js/i18n/ar.js';
 import { en } from '../public/assets/js/i18n/en.js';
-import { loadReferenceData, loadSampleRequests } from '../public/assets/js/data/seed.js';
+import { loadReferenceData, loadSampleRequests, USER_IDS } from '../public/assets/js/data/seed.js';
 import { createMemoryRepository } from '../public/assets/js/data/memoryRepository.js';
 import { createServices } from '../public/assets/js/services/index.js';
 
@@ -47,7 +49,7 @@ describe('getBoard and getFormContext', () => {
     await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
     const board = await w.svc.getBoard(w.who.fatima);
     const item = board.items.find((i) => i.request.id === r.id);
-    expect(item.progress).toEqual({ approved: 1, total: 1 });
+    expect(item.progress).toEqual({ approved: 1, total: 2 });
     expect(Object.keys(board.users)).toHaveLength(7);
     expect(board.stalledDays).toBe(3);
   });
@@ -57,6 +59,18 @@ describe('getBoard and getFormContext', () => {
     expect((await w.svc.getBoard(w.who.ahmed)).items).toHaveLength(1);
     expect((await w.svc.getBoard(w.who.sara)).items).toHaveLength(0);
     expect((await w.svc.getBoard(w.who.fatima)).items).toHaveLength(1);
+  });
+
+  it('shows a senior approver only the requests assigned to them; the manager sees all', async () => {
+    const forHusni = await newRequest(w); // the default input assigns Husni
+    const forSayed = await newRequest(w, { seniorApproverId: w.who.msayed.id });
+    const ids = async (u) => (await w.svc.getBoard(u)).items.map((i) => i.request.id).sort();
+    expect(await ids(w.who.husni)).toEqual([forHusni.id]);
+    expect(await ids(w.who.msayed)).toEqual([forSayed.id]);
+    expect(await ids(w.who.kharji)).toEqual([forHusni.id, forSayed.id].sort());
+    expect(await errorKey(w.svc.getRequestDetail(w.who.msayed, forHusni.ref))).toBe(
+      'errors.notFound',
+    );
   });
 
   it('marks a request stalled after more than three working days in one status', async () => {
@@ -212,6 +226,123 @@ describe('board logic', () => {
     expect(hasActiveFilters(defaultFilters())).toBe(false);
     expect(hasActiveFilters({ ...defaultFilters(), search: ' x ' })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), showAllTransferred: true })).toBe(false);
+    expect(hasActiveFilters({ ...defaultFilters(), requesterId: 'u1' })).toBe(true);
+    expect(hasActiveFilters({ ...defaultFilters(), sort: 'oldest' })).toBe(false);
+  });
+
+  it('also searches the customer name, the account number without spaces and the bank reference', () => {
+    const items = [
+      item({ requesterName: 'Gulf Foods', iban: 'SA35 1000 0000 1234', transferRef: 'BNK-7781' }),
+    ];
+    const f = (search) => applyFilters(items, { ...defaultFilters(), search }, ctx).length;
+    expect(f('gulf')).toBe(1);
+    expect(f('sa351000')).toBe(1);
+    expect(f('1000 0000')).toBe(1);
+    expect(f('bnk-7781')).toBe(1);
+  });
+
+  it('filters by the date created, in Riyadh days', () => {
+    // now = Sunday 25 Oct 2026, 11:00 Riyadh, so this week starts that same Sunday
+    const at = (createdAt) => item({ createdAt });
+    const items = [
+      at('2026-10-25T05:00:00Z'), // today
+      at('2026-10-24T22:30:00Z'), // 01:30 on the 25th in Riyadh: also today
+      at('2026-10-24T08:00:00Z'), // Saturday: last week, this month
+      at('2026-09-15T08:00:00Z'), // last month
+      at('2026-08-15T08:00:00Z'),
+    ];
+    const run = (f) => applyFilters(items, { ...defaultFilters(), ...f }, ctx).length;
+    expect(run({ date: 'today' })).toBe(2);
+    expect(run({ date: 'week' })).toBe(2);
+    expect(run({ date: 'month' })).toBe(3);
+    expect(run({ date: 'lastMonth' })).toBe(1);
+    expect(run({ date: 'custom', dateFrom: '2026-09-01', dateTo: '2026-10-24' })).toBe(2);
+    expect(run({ date: 'custom', dateFrom: '', dateTo: '2026-09-30' })).toBe(2);
+    expect(run({ date: 'custom', dateFrom: '', dateTo: '' })).toBe(5);
+  });
+
+  it('filters on one exact day, in Riyadh time', () => {
+    const items = [
+      item({ createdAt: '2026-10-20T08:00:00Z' }),
+      item({ createdAt: '2026-10-20T21:30:00Z' }), // 00:30 on the 21st in Riyadh
+      item({ createdAt: '2026-10-19T21:30:00Z' }), // 00:30 on the 20th in Riyadh
+    ];
+    const run = (dateOn) =>
+      applyFilters(items, { ...defaultFilters(), date: 'exact', dateOn }, ctx).length;
+    expect(run('2026-10-20')).toBe(2);
+    expect(run('2026-10-21')).toBe(1);
+    expect(run('')).toBe(3);
+    expect(activeFilterCount({ ...defaultFilters(), date: 'exact' })).toBe(0);
+    expect(activeFilterCount({ ...defaultFilters(), date: 'exact', dateOn: '2026-10-20' })).toBe(1);
+  });
+
+  it('filters by money movement', () => {
+    const items = [item({ movement: 'internal' }), item({ movement: 'external' })];
+    const run = (movement) =>
+      applyFilters(items, { ...defaultFilters(), movement }, ctx).length;
+    expect(run('')).toBe(2);
+    expect(run('internal')).toBe(1);
+    expect(run('external')).toBe(1);
+    expect(activeFilterCount({ ...defaultFilters(), movement: 'external' })).toBe(1);
+  });
+
+  it('treats last month across a new year', () => {
+    const items = [item({ createdAt: '2025-12-20T08:00:00Z' })];
+    const jan = { users, nowIso: '2026-01-05T08:00:00Z' };
+    expect(applyFilters(items, { ...defaultFilters(), date: 'lastMonth' }, jan)).toHaveLength(1);
+  });
+
+  it('filters by requester, company, account and an amount range in SAR', () => {
+    const items = [
+      item({ createdById: 'u1', fromAccountId: 'A1', amountSar: 1000 }),
+      item({ createdById: 'u2', fromAccountId: 'B1', amountSar: 50000.004 }),
+    ];
+    const accountCompany = (id) => ({ A1: 'Alpha', B1: 'Beta' })[id];
+    const run = (f) =>
+      applyFilters(items, { ...defaultFilters(), ...f }, { ...ctx, accountCompany }).length;
+    expect(run({ requesterId: 'u2' })).toBe(1);
+    expect(run({ company: 'Alpha' })).toBe(1);
+    expect(run({ accountId: 'B1' })).toBe(1);
+    expect(run({ amountMin: 1000 })).toBe(2);
+    expect(run({ amountMin: 1000.01 })).toBe(1);
+    expect(run({ amountMax: 50000 })).toBe(2); // 50000.004 rounds to 50000.00
+    expect(run({ amountMin: 2000, amountMax: 40000 })).toBe(0);
+  });
+
+  it('sorts newest, oldest, or by SAR amount', () => {
+    const a = item({ id: 'a', createdAt: '2026-10-20T00:00:00Z', amountSar: 500 });
+    const b = item({ id: 'b', createdAt: '2026-10-24T00:00:00Z', amountSar: 100 });
+    const c = item({ id: 'c', createdAt: '2026-10-22T00:00:00Z', amountSar: 900 });
+    const ids = (sort) => sortItems([a, b, c], sort).map((i) => i.request.id);
+    expect(ids('newest')).toEqual(['b', 'c', 'a']);
+    expect(ids('oldest')).toEqual(['a', 'c', 'b']);
+    expect(ids('amountDesc')).toEqual(['c', 'a', 'b']);
+  });
+
+  it('counts the panel filters, the amount range once', () => {
+    expect(activeFilterCount(defaultFilters())).toBe(0);
+    expect(
+      activeFilterCount({
+        ...defaultFilters(),
+        date: 'month',
+        amountMin: 1,
+        amountMax: 5,
+        company: 'Alpha',
+        accountId: 'A1',
+        search: 'x',
+        sort: 'oldest',
+      }),
+    ).toBe(3);
+    expect(activeFilterCount({ ...defaultFilters(), date: 'custom' })).toBe(0);
+  });
+
+  it('shows every transfer in a chosen date period, not only this month', () => {
+    const items = [item({ status: 'transferred', createdAt: '2026-09-10T08:00:00Z', transferredAt: '2026-09-12T08:00:00Z' })];
+    const col = buildColumns(items, { ...defaultFilters(), date: 'lastMonth' }, now).find(
+      (c) => c.status === 'transferred',
+    );
+    expect(col).toMatchObject({ hidden: 0 });
+    expect(col.items).toHaveLength(1);
   });
 });
 
@@ -276,12 +407,14 @@ describe('the done-when story for phase 2', () => {
     const created = await w.svc.createRequest(
       w.who.ahmed,
       {
+        requesterName: 'Ahmed Khalil',
+        seniorApproverId: USER_IDS.husni,
         beneficiary: 'Najd Logistics',
         iban: 'SA0380000000608010167519',
         category: 'beneficiary',
         movement: 'external',
         swiftCode: 'NCBKSAJE',
-        currency: 'USD',
+        fromAccountId: USD_ACCOUNT_ID,
         amount: 400000,
         purpose: '',
       },
@@ -349,7 +482,7 @@ describe('text coverage', () => {
       expect(en[`status.${s}`], s).toBeTruthy();
       expect(ar[`status.${s}`], s).toBeTruthy();
     }
-    for (const r of ['creator', 'bank_ops', 'approver', 'admin']) {
+    for (const r of ['creator', 'bank_ops', 'senior_approver', 'manager_approver', 'admin']) {
       expect(en[`role.${r}`], r).toBeTruthy();
       expect(ar[`role.${r}`], r).toBeTruthy();
     }

@@ -46,10 +46,18 @@ describe('time', () => {
 });
 
 describe('approval rows (SPEC 4.1)', () => {
-  it('builds a single pending row for the round', () => {
+  it('builds the senior stage assigned to the chosen approver, then the open manager stage', () => {
     let n = 0;
-    const rows = buildApprovalRows({ requestId: 'r', round: 2, newId: () => `a${++n}` });
-    expect(rows.map((r) => [r.stageOrder, r.status, r.round])).toEqual([[1, 'pending', 2]]);
+    const rows = buildApprovalRows({
+      requestId: 'r',
+      round: 2,
+      newId: () => `a${++n}`,
+      seniorApproverId: 'u-senior',
+    });
+    expect(rows.map((r) => [r.stageOrder, r.status, r.round, r.assignedToId])).toEqual([
+      [1, 'pending', 2, 'u-senior'],
+      [2, 'pending', 2, null],
+    ]);
   });
 });
 
@@ -104,6 +112,16 @@ describe('payment details and stalled', () => {
     expect(paymentDetailsChanged({ ...request, bankedDetails: null })).toBe(true);
     expect(paymentDetailsChanged({ ...request, swiftCode: 'ncbksaje' })).toBe(true);
   });
+  it('counts a different paying account as a change, but not on details saved before that', () => {
+    const banked = { ...request.bankedDetails, fromAccountId: 'A1' };
+    const r = { ...request, fromAccountId: 'A1', bankedDetails: banked };
+    expect(paymentDetailsChanged(r)).toBe(false);
+    expect(paymentDetailsChanged({ ...r, fromAccountId: 'B2' })).toBe(true);
+    const older = { ...banked };
+    delete older.fromAccountId;
+    delete older.swiftCode;
+    expect(paymentDetailsChanged({ ...r, fromAccountId: 'B2', bankedDetails: older })).toBe(false);
+  });
   it('is stalled after more than the allowed working days, never when final', () => {
     expect(isStalled(request, '2026-10-22T06:00:00Z', 3)).toBe(true); // Mon Tue Wed Thu = 4
     expect(isStalled(request, '2026-10-21T06:00:00Z', 3)).toBe(false); // 3
@@ -112,16 +130,20 @@ describe('payment details and stalled', () => {
 });
 
 describe('validation (SPEC 7)', () => {
+  const seniorApproverIds = ['u-senior'];
+  const vctx = { rates, seniorApproverIds };
   const ok = {
+    requesterName: 'Najd Requester',
+    seniorApproverId: 'u-senior',
     beneficiary: 'Najd',
     iban: 'SA0380000000608010167519',
     category: 'vat',
     movement: 'internal',
-    currency: 'USD',
+    fromAccountId: '011-713724-080', // SAB Bank, USD
     amount: 10.5,
   };
   it('accepts a valid request', () => {
-    expect(validateRequestInput(ok, { rates })).toEqual({});
+    expect(validateRequestInput(ok, vctx)).toEqual({});
   });
   it('reports each wrong field', () => {
     const e = validateRequestInput(
@@ -134,22 +156,23 @@ describe('validation (SPEC 7)', () => {
         iban: 'SA12',
         purpose: 'x'.repeat(501),
       },
-      { rates },
+      vctx,
     );
     expect(Object.keys(e).sort()).toEqual([
       'amount',
       'beneficiary',
       'category',
       'currency',
+      'fromAccountId',
       'iban',
       'movement',
       'purpose',
+      'requesterName',
+      'seniorApproverId',
     ]);
   });
   it('rejects more than 2 decimals', () => {
-    expect(validateRequestInput({ ...ok, amount: 10.123 }, { rates }).amount).toBe(
-      'validation.amount',
-    );
+    expect(validateRequestInput({ ...ok, amount: 10.123 }, vctx).amount).toBe('validation.amount');
   });
   it("requires an account number or IBAN, and verifies an IBAN's check digits", () => {
     expect(isValidAccountOrIban('')).toBe(false); // now required, not optional
@@ -171,14 +194,14 @@ describe('validation (SPEC 7)', () => {
     expect(isValidSwift('ncbk sa je')).toBe(true); // case/spaces are normalised
     expect(isValidSwift('NCBKSA')).toBe(false); // too short
     expect(isValidSwift('1234SAJE')).toBe(false); // bank code must be letters
-    expect(validateRequestInput({ ...ok, movement: 'external' }, { rates }).swiftCode).toBe(
+    expect(validateRequestInput({ ...ok, movement: 'external' }, vctx).swiftCode).toBe(
       'validation.swift',
     );
     expect(
-      validateRequestInput({ ...ok, movement: 'external', swiftCode: 'NCBKSAJE' }, { rates }),
+      validateRequestInput({ ...ok, movement: 'external', swiftCode: 'NCBKSAJE' }, vctx),
     ).toEqual({});
     // not required, and ignored, for an internal transfer
-    expect(validateRequestInput(ok, { rates })).toEqual({});
+    expect(validateRequestInput(ok, vctx)).toEqual({});
     // and never stored for an internal transfer, even if typed before switching
     expect(normalizeInput({ ...ok, swiftCode: 'ncbksaje' }).swiftCode).toBe('');
     expect(normalizeInput({ ...ok, movement: 'external', swiftCode: 'ncbk saje' }).swiftCode).toBe(

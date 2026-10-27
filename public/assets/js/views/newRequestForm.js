@@ -7,7 +7,7 @@ import { html } from '../ui/html.js';
 import { mount, delegate } from '../ui/dom.js';
 import { openDialog, confirmDialog } from '../ui/dialog.js';
 import { t, getLang } from '../i18n/index.js';
-import { CATEGORIES, CURRENCIES, labelOf } from '../data/lookups.js';
+import { CATEGORIES, COMPANY_ACCOUNTS, accountOf, labelOf } from '../data/lookups.js';
 import { RuleError } from '../domain/errors.js';
 import { parseAmountInput, toSar } from '../domain/money.js';
 import { validateFile, validateRequestInput } from '../domain/validation.js';
@@ -16,16 +16,24 @@ import { personName } from '../i18n/labels.js';
 
 /** Fields that have a message line under them. */
 const FIELDS = [
+  'fromAccountId',
+  'requesterName',
+  'seniorApproverId',
   'beneficiary',
   'bank',
   'iban',
   'category',
   'movement',
   'swiftCode',
-  'currency',
   'amount',
   'purpose',
 ];
+
+/** The accounts grouped by company, in the order they appear in the lookup list. */
+const ACCOUNTS_BY_COMPANY = COMPANY_ACCOUNTS.reduce((groups, a) => {
+  (groups[a.company] ??= []).push(a);
+  return groups;
+}, /** @type {Record<string, typeof COMPANY_ACCOUNTS>} */ ({}));
 
 /** @typedef {{services: any, user: import('../data/typedefs.js').User}} Ctx */
 
@@ -49,8 +57,7 @@ export const openEditRequest = (ctx, request) => openRequestForm(ctx, request);
 async function openRequestForm(ctx, existing) {
   const editing = !!existing;
   const lang = getLang();
-  const form = await ctx.services.getFormContext(ctx.user);
-  const currencies = CURRENCIES.filter((c) => c in form.rates);
+  const form = await ctx.services.getFormContext(ctx.user, existing?.createdById);
   /** @type {File[]} */
   let files = [];
   let dirty = false;
@@ -73,74 +80,123 @@ async function openRequestForm(ctx, existing) {
           ${personName(ctx.user, lang)} <span class="hint">· ${t('form.requestedByHint')}</span>
         </div>
       </div>
-      <div class="field">
-        ${label('beneficiary', t('form.beneficiary'), true)}
-        <input type="text" id="nr-beneficiary" name="beneficiary" autocomplete="off" aria-describedby="err-beneficiary" autofocus />
-        ${err('beneficiary')}
-      </div>
-      <div class="field">
-        ${label('bank', t('form.bank'))}
-        <input type="text" id="nr-bank" name="bank" autocomplete="off" aria-describedby="err-bank" />
-        ${err('bank')}
-      </div>
-      <div class="field">
-        ${label('iban', t('form.iban'), true)}
-        <input type="text" id="nr-iban" name="iban" class="mono" dir="ltr" placeholder="SAxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off" aria-describedby="err-iban" />
-        ${err('iban')}
-      </div>
-      <fieldset class="field">
-        <legend class="lbl">${t('form.movement')}<span class="req" aria-hidden="true"> *</span></legend>
-        <div class="radios">
-          <label class="radio"><input type="radio" name="movement" value="internal" checked /> ${t('movement.internal')}</label>
-          <label class="radio"><input type="radio" name="movement" value="external" /> ${t('movement.external')}</label>
+      <fieldset class="form-section">
+        <legend class="form-section-title">${t('form.sectionCostCenter')}</legend>
+        <div class="field">
+          ${label('company', t('form.company'), true)}
+          <select id="nr-company" name="company">
+            <option value="">${t('form.chooseCompany')}</option>
+            ${Object.keys(ACCOUNTS_BY_COMPANY).map((c) => html`<option value="${c}">${c}</option>`)}
+          </select>
         </div>
-        ${err('movement')}
+        <div class="field">
+          ${label('fromAccountId', t('form.fromAccount'), true)}
+          <select
+            id="nr-fromAccountId"
+            name="fromAccountId"
+            aria-describedby="err-fromAccountId"
+            disabled
+          >
+            <option value="">${t('form.pickCompanyFirst')}</option>
+          </select>
+          ${err('fromAccountId')}
+        </div>
+        <div class="field full">
+          <div class="readonly" id="nr-account-info" hidden></div>
+        </div>
       </fieldset>
-      <div class="field" id="nr-swift-wrap" hidden>
-        ${label('swiftCode', t('form.swiftCode'), true)}
-        <input type="text" id="nr-swiftCode" name="swiftCode" class="mono" dir="ltr" placeholder="AAAABBCCXXX" autocomplete="off" aria-describedby="err-swiftCode" />
-        ${err('swiftCode')}
-      </div>
-      <div class="field full">
-        ${label('category', t('form.category'), true)}
-        <select id="nr-category" name="category" aria-describedby="err-category">
-          <option value="">${t('form.chooseCategory')}</option>
-          ${CATEGORIES.map((c) => html`<option value="${c.key}">${labelOf(c, lang)}</option>`)}
-        </select>
-        ${err('category')}
-      </div>
-      <div class="field">
-        ${label('currency', t('form.currency'), true)}
-        <select id="nr-currency" name="currency" aria-describedby="err-currency">
-          ${currencies.map((c) => html`<option value="${c}">${c}</option>`)}
-        </select>
-        ${err('currency')}
-      </div>
-      <div class="field">
-        ${label('amount', t('form.amount'), true)}
-        <input type="text" id="nr-amount" name="amount" class="mono" dir="ltr" inputmode="decimal" placeholder="0.00" autocomplete="off" aria-describedby="err-amount" />
-        ${err('amount')}
-      </div>
-      <div class="field full"><p class="tier" id="nr-tier" aria-live="polite"></p></div>
-      <div class="field full">
-        ${label('purpose', t('form.purpose'))}
-        <textarea id="nr-purpose" name="purpose" rows="2" aria-describedby="err-purpose"></textarea>
-        ${err('purpose')}
-      </div>
-      ${
-        editing
-          ? html`<p class="field full muted small">${t('form.editDocsHint')}</p>`
-          : html`<div class="field full">
-        <span class="lbl">${t('form.docs')}<span class="req" aria-hidden="true"> *</span></span>
-        <div class="drop-wrap">
-          <input type="file" id="nr-file" class="visually-hidden" multiple
-            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-describedby="err-paymentDocs" />
-          <label class="drop" for="nr-file" id="nr-drop">${t('form.drop', { mb: form.maxFileMb })}</label>
+      <fieldset class="form-section">
+        <legend class="form-section-title">${t('form.sectionCustomerInfo')}</legend>
+        <div class="field">
+          ${label('requesterName', t('form.requesterName'), true)}
+          <input
+            type="text"
+            id="nr-requesterName"
+            name="requesterName"
+            autocomplete="off"
+            aria-describedby="err-requesterName"
+          />
+          ${err('requesterName')}
         </div>
-        <div id="nr-files"></div>
-        ${err('paymentDocs')}
-      </div>`
-      }
+        <div class="field">
+          ${label('beneficiary', t('form.beneficiary'), true)}
+          <input type="text" id="nr-beneficiary" name="beneficiary" autocomplete="off" aria-describedby="err-beneficiary" autofocus />
+          ${err('beneficiary')}
+        </div>
+        <div class="field">
+          ${label('bank', t('form.bank'))}
+          <input type="text" id="nr-bank" name="bank" autocomplete="off" aria-describedby="err-bank" />
+          ${err('bank')}
+        </div>
+        <div class="field">
+          ${label('iban', t('form.iban'), true)}
+          <input type="text" id="nr-iban" name="iban" class="mono" dir="ltr" placeholder="SAxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off" aria-describedby="err-iban" />
+          ${err('iban')}
+        </div>
+        <fieldset class="field">
+          <legend class="lbl">${t('form.movement')}<span class="req" aria-hidden="true"> *</span></legend>
+          <div class="radios">
+            <label class="radio"><input type="radio" name="movement" value="internal" checked /> ${t('movement.internal')}</label>
+            <label class="radio"><input type="radio" name="movement" value="external" /> ${t('movement.external')}</label>
+          </div>
+          ${err('movement')}
+        </fieldset>
+        <div class="field" id="nr-swift-wrap" hidden>
+          ${label('swiftCode', t('form.swiftCode'), true)}
+          <input type="text" id="nr-swiftCode" name="swiftCode" class="mono" dir="ltr" placeholder="AAAABBCCXXX" autocomplete="off" aria-describedby="err-swiftCode" />
+          ${err('swiftCode')}
+        </div>
+      </fieldset>
+      <fieldset class="form-section">
+        <legend class="form-section-title">${t('form.sectionTransactionReq')}</legend>
+        <div class="field">
+          ${label('seniorApproverId', t('form.seniorApprover'), true)}
+          <select
+            id="nr-seniorApproverId"
+            name="seniorApproverId"
+            aria-describedby="err-seniorApproverId"
+          >
+            <option value="">${t('form.chooseSeniorApprover')}</option>
+            ${form.seniorApprovers.map(
+              (a) => html`<option value="${a.id}">${personName(a, lang)}</option>`,
+            )}
+          </select>
+          ${err('seniorApproverId')}
+        </div>
+        <div class="field full">
+          ${label('category', t('form.category'), true)}
+          <select id="nr-category" name="category" aria-describedby="err-category">
+            <option value="">${t('form.chooseCategory')}</option>
+            ${CATEGORIES.map((c) => html`<option value="${c.key}">${labelOf(c, lang)}</option>`)}
+          </select>
+          ${err('category')}
+        </div>
+        <div class="field">
+          ${label('amount', t('form.amount'), true)}
+          <input type="text" id="nr-amount" name="amount" class="mono" dir="ltr" inputmode="decimal" placeholder="0.00" autocomplete="off" aria-describedby="err-amount" />
+          ${err('amount')}
+        </div>
+        <div class="field full"><p class="tier" id="nr-tier" aria-live="polite"></p></div>
+        <div class="field full">
+          ${label('purpose', t('form.purpose'))}
+          <textarea id="nr-purpose" name="purpose" rows="2" aria-describedby="err-purpose"></textarea>
+          ${err('purpose')}
+        </div>
+        ${
+          editing
+            ? html`<p class="field full muted small">${t('form.editDocsHint')}</p>`
+            : html`<div class="field full">
+          <span class="lbl">${t('form.docs')}<span class="req" aria-hidden="true"> *</span></span>
+          <div class="drop-wrap">
+            <input type="file" id="nr-file" class="visually-hidden" multiple
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-describedby="err-paymentDocs" />
+            <label class="drop" for="nr-file" id="nr-drop">${t('form.drop', { mb: form.maxFileMb })}</label>
+          </div>
+          <div id="nr-files"></div>
+          ${err('paymentDocs')}
+        </div>`
+        }
+      </fieldset>
     </div>
     <p class="form-error" id="nr-formerror" role="alert" hidden></p>
     <div class="modal-actions">
@@ -168,12 +224,32 @@ async function openRequestForm(ctx, existing) {
   /** @param {string} id */
   const q = (id) => /** @type {any} */ (root.querySelector(`#${id}`));
 
+  /** Fills the account select with the accounts of one company, keeping `keep` selected
+   * when it belongs to that company. @param {string} company @param {string} [keep] */
+  function populateAccounts(company, keep = '') {
+    const select = q('nr-fromAccountId');
+    const accounts = ACCOUNTS_BY_COMPANY[company] ?? [];
+    select.disabled = accounts.length === 0;
+    mount(
+      select,
+      html`<option value="">${t('form.chooseAccount')}</option>
+        ${accounts.map((a) => html`<option value="${a.id}">${a.bank} — ${a.currency} — ${a.id}</option>`)}`,
+    );
+    select.value = accounts.some((a) => a.id === keep) ? keep : '';
+  }
+
   if (existing) {
+    const account = accountOf(existing.fromAccountId);
+    if (account) {
+      q('nr-company').value = account.company;
+      populateAccounts(account.company, existing.fromAccountId);
+    }
+    q('nr-requesterName').value = existing.requesterName;
+    q('nr-seniorApproverId').value = existing.seniorApproverId;
     q('nr-beneficiary').value = existing.beneficiary;
     q('nr-bank').value = existing.bank;
     q('nr-iban').value = existing.iban;
     q('nr-category').value = existing.category;
-    q('nr-currency').value = existing.currency;
     q('nr-amount').value = new Intl.NumberFormat('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -197,16 +273,32 @@ async function openRequestForm(ctx, existing) {
     }
   }
 
+  /** Shows the chosen account's bank, currency and number once one is picked. */
+  function updateAccountInfo() {
+    const info = q('nr-account-info');
+    const account = accountOf(q('nr-fromAccountId').value);
+    info.hidden = !account;
+    if (account) {
+      info.textContent = t('form.accountInfo', {
+        bank: account.bank,
+        currency: account.currency,
+        account: account.id,
+      });
+    }
+  }
+
   // ---- reading and checking -----------------------------------------------------------------
 
   const values = () => ({
+    fromAccountId: q('nr-fromAccountId').value,
+    requesterName: q('nr-requesterName').value,
+    seniorApproverId: q('nr-seniorApproverId').value,
     beneficiary: q('nr-beneficiary').value,
     bank: q('nr-bank').value,
     iban: q('nr-iban').value,
     category: q('nr-category').value,
     movement: root.querySelector('input[name="movement"]:checked')?.getAttribute('value') ?? '',
     swiftCode: q('nr-swiftCode').value,
-    currency: q('nr-currency').value,
     amount: parseAmountInput(q('nr-amount').value),
     purpose: q('nr-purpose').value,
   });
@@ -234,7 +326,7 @@ async function openRequestForm(ctx, existing) {
 
   function updateTier() {
     const amount = parseAmountInput(q('nr-amount').value);
-    const currency = q('nr-currency').value;
+    const currency = accountOf(q('nr-fromAccountId').value)?.currency ?? '';
     const rate = form.rates[currency];
     const tier = q('nr-tier');
     if (!(amount > 0) || !rate || currency === 'SAR') {
@@ -298,16 +390,30 @@ async function openRequestForm(ctx, existing) {
     dirty = true;
     const name = fieldOf(event);
     if (!name) return;
-    if (name === 'amount' || name === 'currency') updateTier();
+    if (name === 'amount') updateTier();
     // Once a message is showing, clear it as soon as the value is fixed.
     if (q(`err-${name}`)?.textContent) setError(name, validateAll()[name]);
   });
   root.addEventListener('change', (event) => {
     dirty = true;
+    if (/** @type {HTMLElement} */ (event.target).id === 'nr-company') {
+      populateAccounts(q('nr-company').value);
+      updateAccountInfo();
+      updateTier();
+      setError('fromAccountId', validateAll().fromAccountId);
+    }
     const name = fieldOf(event);
-    if (name === 'currency') updateTier();
+    if (name === 'fromAccountId') {
+      updateAccountInfo();
+      updateTier();
+    }
     if (name === 'movement') updateSwiftVisibility();
-    if (name === 'category' || name === 'currency' || name === 'movement') {
+    if (
+      name === 'category' ||
+      name === 'fromAccountId' ||
+      name === 'movement' ||
+      name === 'seniorApproverId'
+    ) {
       setError(name, validateAll()[name]);
     }
     const target = /** @type {HTMLInputElement} */ (event.target);
@@ -417,6 +523,7 @@ async function openRequestForm(ctx, existing) {
     }
   });
 
+  updateAccountInfo();
   updateTier();
   updateSwiftVisibility();
   renderFiles();

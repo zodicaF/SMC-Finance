@@ -9,6 +9,7 @@ const PACKAGES = [
   { pkg: 'ibm-plex-sans-arabic', subsets: ['arabic', 'latin'], weights: [400, 500, 600, 700] },
   { pkg: 'ibm-plex-sans', subsets: ['latin'], weights: [400, 500, 600, 700] },
   { pkg: 'ibm-plex-mono', subsets: ['latin'], weights: [400, 500, 600] },
+  { pkg: 'space-grotesk', subsets: ['latin'], weights: [500, 600, 700] },
 ];
 
 mkdirSync(OUT, { recursive: true });

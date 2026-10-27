@@ -1,6 +1,15 @@
 // Phase 5: the Excel writer, the export data, and the admin rules.
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeWorld, newRequest, inBank, ready, errorKey, baseInput, pdf } from './helpers.js';
+import {
+  makeWorld,
+  newRequest,
+  inBank,
+  ready,
+  errorKey,
+  baseInput,
+  pdf,
+  USD_ACCOUNT_ID,
+} from './helpers.js';
 import {
   buildXlsx,
   columnName,
@@ -163,7 +172,11 @@ describe('export data', () => {
   });
 
   it('turns a transferred request with a held bank status into a full row', async () => {
-    const r = await ready(w, { currency: 'USD', amount: 400000, iban: 'SA0380000000608010167519' });
+    const r = await ready(w, {
+      fromAccountId: USD_ACCOUNT_ID,
+      amount: 400000,
+      iban: 'SA0380000000608010167519',
+    });
     await w.svc.setBankStatus(w.who.anfal, r.id, {
       state: 'review',
       reasons: ['compliance', 'docs_missing'],
@@ -178,7 +191,7 @@ describe('export data', () => {
       amount: 400000,
       rate: 3.75,
       amountSar: 1500000,
-      approvals: '1/1',
+      approvals: '2/2',
       transferRef: 'FT123',
       bankStatus: 'Held for bank review',
       bankReasons: 'Compliance / AML checks, Missing required documents',
@@ -228,11 +241,11 @@ describe('admin', () => {
   });
 
   it('a changed rate does not alter existing requests', async () => {
-    const r = await newRequest(w, { currency: 'USD', amount: 1000 });
+    const r = await newRequest(w, { fromAccountId: USD_ACCOUNT_ID, amount: 1000 });
     await w.svc.saveFxRate(w.who.fatima, 'USD', 4);
     const kept = await w.repo.getRequestById(r.id);
     expect([kept.fxRate, kept.amountSar]).toEqual([3.75, 3750]);
-    const next = await newRequest(w, { currency: 'USD', amount: 1000 });
+    const next = await newRequest(w, { fromAccountId: USD_ACCOUNT_ID, amount: 1000 });
     expect([next.fxRate, next.amountSar]).toEqual([4, 4000]);
   });
 

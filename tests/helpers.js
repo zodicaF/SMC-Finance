@@ -46,14 +46,20 @@ export const pdf = (name = 'doc.pdf') => ({
   blob: new Blob(['%PDF-1.1 test'], { type: 'application/pdf' }),
 });
 
+/** A SAR account and a USD account, for tests that need a currency other than the default. */
+export const SAR_ACCOUNT_ID = '011-713724-001';
+export const USD_ACCOUNT_ID = '011-713724-080';
+
 export const baseInput = (over = {}) => ({
+  requesterName: 'Ahmed Khalil',
+  seniorApproverId: USER_IDS.husni,
   beneficiary: 'Najd Logistics',
   bank: 'Saudi National Bank',
   iban: 'SA0380000000608010167519',
   category: 'beneficiary',
   movement: 'external',
   swiftCode: 'NCBKSAJE',
-  currency: 'SAR',
+  fromAccountId: SAR_ACCOUNT_ID,
   amount: 245000,
   purpose: 'Test',
   ...over,
@@ -70,15 +76,18 @@ export async function inBank(world, over = {}) {
   return world.svc.markBankCreated(world.who.anfal, r.id, [pdf('bank.pdf')]);
 }
 
-/** Approve every required stage in order, returning the request. */
+/** Approve every required stage in order: stage 1 (senior) by whoever the request assigned,
+ * stage 2 (manager) by Mohammed Al-Kharji. Returns the request. */
 export async function approveAll(world, id) {
-  const { currentApprovals } = await world.svc.getRequestDetail(
+  const { currentApprovals, request } = await world.svc.getRequestDetail(
     world.who.fatima,
     (await world.repo.getRequestById(id)).ref,
   );
-  const byOrder = { 1: world.who.husni, 2: world.who.msayed, 3: world.who.kharji };
-  for (const row of currentApprovals)
-    await world.svc.decideStage(byOrder[row.stageOrder], id, row.stageOrder, 'approve');
+  const senior = Object.values(world.who).find((u) => u.id === request.seniorApproverId);
+  for (const row of currentApprovals) {
+    const actor = row.stageOrder === 1 ? senior : world.who.kharji;
+    await world.svc.decideStage(actor, id, row.stageOrder, 'approve');
+  }
   return world.repo.getRequestById(id);
 }
 

@@ -17,11 +17,13 @@ import {
 import { workingDaysBetween } from '../domain/time.js';
 import {
   allow,
+  approvalsByRequest,
   buildAttachment,
   checkFiles,
   checkVersion,
   getRequestOrThrow,
   maxFileMb,
+  stalledDaysOf,
   storeAttachments,
   touched,
   writeLog,
@@ -40,11 +42,23 @@ export function createRequestServices(deps) {
     return Object.fromEntries(rows.map((r) => [r.currency, r.rateToSar]));
   }
 
+  /** Ids of the active users who currently hold the `senior_approver` role. */
+  async function seniorApproverIds() {
+    const users = await repo.listUsers();
+    return users.filter((u) => u.active && u.roles.includes('senior_approver')).map((u) => u.id);
+  }
+
   /** Throws a validation RuleError listing the wrong fields.
    * @param {Record<string, any>} input @param {Record<string, number>} rates
-   * @param {FileInput[] | null} documents  null when documents are not checked (editing) */
-  async function assertValid(input, rates, documents) {
-    const errors = validateRequestInput(input, { rates });
+   * @param {string[]} validSeniors
+   * @param {FileInput[] | null} documents  null when documents are not checked (editing)
+   * @param {string} creatorId  who the request belongs to; they can't be its senior approver */
+  async function assertValid(input, rates, validSeniors, documents, creatorId) {
+    const errors = validateRequestInput(input, {
+      rates,
+      seniorApproverIds: validSeniors,
+      creatorId,
+    });
     if (documents) {
       if (documents.length === 0) errors.paymentDocs = 'validation.paymentDocs';
       else {
@@ -62,14 +76,15 @@ export function createRequestServices(deps) {
 
   /**
    * @param {User} actor
-   * @param {Record<string, any>} input  beneficiary, bank, iban, category, movement, currency, amount, purpose
+   * @param {Record<string, any>} input  fromAccountId, requesterName, seniorApproverId, beneficiary, bank, iban, category, movement, amount, purpose
    * @param {FileInput[]} documents  payment documents (at least one)
    * @param {{sample?: boolean}} [opts]
    */
   async function createRequest(actor, input, documents = [], opts = {}) {
     allow('create', actor);
     const rates = await rateMap();
-    await assertValid(input, rates, documents);
+    const validSeniors = await seniorApproverIds();
+    await assertValid(input, rates, validSeniors, documents, actor.id);
     const v = normalizeInput(input);
     const now = clock();
     const fxRate = rates[v.currency];
@@ -115,9 +130,11 @@ export function createRequestServices(deps) {
     checkVersion(request, version);
     allow('edit', actor, request);
     const rates = await rateMap();
-    await assertValid(input, rates, null);
+    const validSeniors = await seniorApproverIds();
+    await assertValid(input, rates, validSeniors, null, request.createdById);
     const v = normalizeInput(input);
-    const fxRate = rates[v.currency];
+    // The rate taken at creation stays (SPEC 4.1) unless the currency itself changed.
+    const fxRate = v.currency === request.currency ? request.fxRate : rates[v.currency];
     const changed = Object.keys(v).filter(
       (k) => /** @type {any} */ (v)[k] !== /** @type {any} */ (request)[k],
     );
@@ -152,7 +169,14 @@ export function createRequestServices(deps) {
     }
     const saved = await repo.updateRequest(next, request.version);
     if (!detailsChanged) {
-      await repo.saveApprovals(buildApprovalRows({ requestId: id, round, newId }));
+      await repo.saveApprovals(
+        buildApprovalRows({
+          requestId: id,
+          round,
+          newId,
+          seniorApproverId: request.seniorApproverId,
+        }),
+      );
     }
     await writeLog(deps, actor, saved, 'resubmitted', {
       round,
@@ -185,10 +209,11 @@ export function createRequestServices(deps) {
     return saved;
   }
 
-  /** @param {User} actor @param {string} id */
-  async function deleteRequest(actor, id) {
+  /** @param {User} actor @param {string} id @param {number} [version] */
+  async function deleteRequest(actor, id, version) {
     const request = await getRequestOrThrow(deps, id);
     allow('delete', actor, request);
+    checkVersion(request, version);
     await repo.deleteRequest(id);
     await writeLog(deps, actor, request, 'deleted', { status: request.status });
   }
@@ -242,21 +267,19 @@ export function createRequestServices(deps) {
 
   /**
    * Stages waiting for this user: pending, on requests they did not create, when they hold the
-   * `approver` role. Oldest first. @param {User} actor
+   * `senior_approver` or `manager_approver` role. Oldest first. @param {User} actor
    */
   async function myApprovals(actor) {
-    if (!hasRole(actor, 'approver')) return [];
+    if (!hasRole(actor, 'senior_approver') && !hasRole(actor, 'manager_approver')) return [];
     const [requests, allApprovals] = await Promise.all([
       repo.listRequests(),
       repo.listAllApprovals(),
     ]);
     /** @type {{request: import('../data/typedefs.js').Request, stage: import('../data/typedefs.js').Approval}[]} */
     const items = [];
+    const byRequest = approvalsByRequest(allApprovals);
     for (const request of requests) {
-      const rows = currentRoundRows(
-        allApprovals.filter((a) => a.requestId === request.id),
-        request.round,
-      );
+      const rows = currentRoundRows(byRequest[request.id] ?? [], request.round);
       for (const stage of rows) {
         if (stage.status !== 'pending') continue;
         if (denyReason('decide', actor, request, { stage, approvals: rows })) continue;
@@ -284,10 +307,8 @@ export function createRequestServices(deps) {
       repo.getSettings(),
     ]);
     const nowIso = clock();
-    const stalledDays = Number(settings.stalledDays) > 0 ? Number(settings.stalledDays) : 3;
-    /** @type {Record<string, import('../data/typedefs.js').Approval[]>} */
-    const byRequest = {};
-    for (const a of allApprovals) (byRequest[a.requestId] ??= []).push(a);
+    const stalledDays = stalledDaysOf(settings);
+    const byRequest = approvalsByRequest(allApprovals);
     const items = requests.map((request) => {
       const rows = currentRoundRows(byRequest[request.id] ?? [], request.round);
       const approvalPhase = request.status === 'bank_created' || request.status === 'approving';
@@ -305,13 +326,18 @@ export function createRequestServices(deps) {
   }
 
   /**
-   * What the request form needs: exchange rates and the file size limit.
+   * What the request form needs: exchange rates, the file size limit, and everyone the
+   * requester may assign as the senior approver (never the requester themselves).
    * @param {User} actor
+   * @param {string} [creatorId]  when editing, whose request it is; defaults to the actor
    */
-  async function getFormContext(actor) {
+  async function getFormContext(actor, creatorId = actor.id) {
     allow('create', actor);
-    const [rates, mb] = await Promise.all([rateMap(), maxFileMb(deps)]);
-    return { rates, maxFileMb: mb };
+    const [rates, mb, users] = await Promise.all([rateMap(), maxFileMb(deps), repo.listUsers()]);
+    const seniorApprovers = users.filter(
+      (u) => u.active && u.roles.includes('senior_approver') && u.id !== creatorId,
+    );
+    return { rates, maxFileMb: mb, seniorApprovers };
   }
 
   return {

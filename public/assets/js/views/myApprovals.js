@@ -162,7 +162,8 @@ export function render(container, ctx) {
     reject: async (el) => {
       const item = itemOf(el.dataset.id);
       if (!item) return;
-      const result = await rejectStage(ctx, item.request, item.stage, t('detail.approverRole'));
+      const stageName = t(item.stage.stageOrder === 1 ? 'detail.stageSenior' : 'detail.stageManager');
+      const result = await rejectStage(ctx, item.request, item.stage, stageName);
       if (result) await done('detail.rejected');
     },
   });

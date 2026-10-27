@@ -13,7 +13,7 @@ import { openFilePreview } from '../ui/filePreview.js';
 import { statusPill } from '../ui/components/statusPill.js';
 import { t, getLang } from '../i18n/index.js';
 import { fmtAmount, fmtDate, fmtSize } from '../i18n/format.js';
-import { categoryLabel, personName } from '../i18n/labels.js';
+import { accountLabel, categoryLabel, personName } from '../i18n/labels.js';
 import { REASONS, labelOf } from '../data/lookups.js';
 import { canDo, denyReason } from '../domain/permissions.js';
 import { approvalProgress, paymentDetailsChanged } from '../domain/rules.js';
@@ -24,6 +24,7 @@ import {
   rejectStage,
 } from './decisionDialogs.js';
 import { openEditRequest } from './newRequestForm.js';
+import { openTracker } from './trackerDialog.js';
 import { render as renderNoAccess } from './noAccess.js';
 
 const FILE_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
@@ -90,6 +91,10 @@ export function render(container, ctx) {
   /** @param {NonNullable<typeof d>} data @param {string} id */
   const nameOf = (data, id) => personName(data.users[id], lang);
 
+  /** "Senior approval" for stage 1, "Manager approval" for stage 2. @param {number} stageOrder */
+  const stageLabel = (stageOrder) =>
+    t(stageOrder === 1 ? 'detail.stageSenior' : 'detail.stageManager');
+
   /** One line of the history, in words. @param {NonNullable<typeof d>} data @param {any} entry */
   function logLine(data, entry) {
     const det = entry.details ?? {};
@@ -146,7 +151,7 @@ export function render(container, ctx) {
     if (r.status === 'returned') {
       const rejected = data.currentApprovals.find((a) => a.status === 'rejected');
       const reason = r.closedReason ?? '';
-      return html`<div class="banner bad" role="note">
+      return html`<div class="banner action" role="note">
         ${
           rejected?.decidedById
             ? t('detail.returnedBanner', { name: nameOf(data, rejected.decidedById), reason })
@@ -172,6 +177,10 @@ export function render(container, ctx) {
   function actionsSection(data) {
     const r = data.request;
     const buttons = [
+      html`<button type="button" class="btn tracker-btn" data-action="tracker">
+        <span class="tracker-btn-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        ${t('tracker.button')}
+      </button>`,
       button('print', t('detail.print')),
       canDo('edit', user, r) ? button('edit', t('detail.edit')) : '',
       canDo('resubmit', user, r) ? button('resubmit', t('detail.resubmit'), 'primary') : '',
@@ -188,8 +197,10 @@ export function render(container, ctx) {
       <h3>${t('detail.secDetails')}</h3>
       <dl class="kvs">
         ${kv(t('detail.requestedBy'), `${nameOf(data, r.createdById)} · ${fmtDate(r.createdAt, lang)}`)}
+        ${kv(t('detail.fromAccount'), accountLabel(r.fromAccountId))}
         ${kv(t('detail.category'), categoryLabel(r.category, lang))}
         ${kv(t('detail.movement'), t(`movement.${r.movement}`))}
+        ${kv(t('detail.requesterName'), r.requesterName)}
         ${kv(t('detail.bank'), r.bank || '—')}
         ${kv(t('detail.iban'), r.iban ? html`<bdi dir="ltr" class="mono">${r.iban}</bdi>` : '—')}
         ${
@@ -260,7 +271,9 @@ export function render(container, ctx) {
         ${kv(t('detail.enteredOn'), fmtDate(r.bankCreatedAt, lang))}
       </dl>`;
     } else if (r.status === 'submitted' && canDo('markBankCreated', user, r)) {
-      const proofs = data.attachments.filter((a) => a.kind === 'bank_proof').length;
+      const proofs = data.attachments.filter(
+        (a) => a.kind === 'bank_proof' && (a.round ?? 1) === r.round,
+      ).length;
       body = html`<p class="muted">${t('detail.bankHintOps')}</p>
         <div class="actions-bar">
           <label class="btn small" for="add-proof">${t('detail.addProof')}</label>
@@ -312,8 +325,13 @@ export function render(container, ctx) {
       ${dot}
       <div class="step-body">
         <p class="step-name">
-          <b>${t('detail.approverRole')}</b>
+          <b>${stageLabel(row.stageOrder)}</b>
         </p>
+        ${
+          row.assignedToId && row.status === 'pending'
+            ? html`<p class="muted small">${t('detail.assignedTo', { name: nameOf(data, row.assignedToId) })}</p>`
+            : ''
+        }
         <p class="muted small">${text}</p>
         ${row.note ? html`<p class="small">${t('detail.noteLine', { note: row.note })}</p>` : ''}
         ${
@@ -384,7 +402,7 @@ export function render(container, ctx) {
                     .filter((a) => a.round === n)
                     .map(
                       (a) => html`<li class="small">
-                        ${t('detail.approverRole')} —
+                        ${stageLabel(a.stageOrder)} —
                         ${
                           a.status === 'approved'
                             ? t('detail.approvedAt', {
@@ -548,6 +566,9 @@ export function render(container, ctx) {
   };
 
   const stopClicks = delegate(container, 'click', {
+    tracker: () => {
+      if (d) openTracker(d);
+    },
     retry: () => load(),
     reload: () => {
       conflict = false;
@@ -589,7 +610,7 @@ export function render(container, ctx) {
       });
       if (!ok) return;
       try {
-        await services.deleteRequest(user, r.id);
+        await services.deleteRequest(user, r.id, r.version);
         showToast(t('detail.deleted'));
         ctx.afterChange?.();
         window.location.hash = '#/board';
@@ -628,14 +649,17 @@ export function render(container, ctx) {
       const stage = stageOf(el);
       if (!d || !stage) return;
       await afterDialog(
-        await rejectStage(ctx, d.request, stage, t('detail.approverRole')),
+        await rejectStage(ctx, d.request, stage, stageLabel(stage.stageOrder)),
         'detail.rejected',
       );
     },
     behalf: async (el) => {
       const stage = stageOf(el);
       if (!d || !stage) return;
-      const names = { stageName: t('detail.approverRole'), approverName: t('detail.approverRole') };
+      const approverName = stage.assignedToId
+        ? nameOf(d, stage.assignedToId)
+        : stageLabel(stage.stageOrder);
+      const names = { stageName: stageLabel(stage.stageOrder), approverName };
       await afterDialog(
         await recordOnBehalfDialog(ctx, d.request, stage, names),
         'detail.behalfDone',

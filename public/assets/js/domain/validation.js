@@ -2,7 +2,13 @@
 // Field validation (SPEC section 7). Each check returns an i18n key or null/empty.
 
 import { hasAtMost2Decimals } from './money.js';
-import { CATEGORIES, MOVEMENTS, ALLOWED_FILE_EXT, ALLOWED_FILE_MIME } from '../data/lookups.js';
+import {
+  CATEGORIES,
+  MOVEMENTS,
+  ALLOWED_FILE_EXT,
+  ALLOWED_FILE_MIME,
+  accountOf,
+} from '../data/lookups.js';
 
 /** @typedef {import('../data/typedefs.js').FileInput} FileInput */
 
@@ -72,7 +78,11 @@ export function isValidSwift(value) {
  */
 export function normalizeInput(input) {
   const movement = /** @type {'internal' | 'external'} */ (String(input.movement ?? ''));
+  const fromAccountId = String(input.fromAccountId ?? '').trim();
+  const account = accountOf(fromAccountId);
   return {
+    requesterName: String(input.requesterName ?? '').trim(),
+    seniorApproverId: String(input.seniorApproverId ?? '').trim(),
     beneficiary: String(input.beneficiary ?? '').trim(),
     bank: String(input.bank ?? '').trim(),
     iban: normalizeIban(String(input.iban ?? '')),
@@ -80,7 +90,10 @@ export function normalizeInput(input) {
     movement,
     // Only external transfers carry a SWIFT/BIC code; an internal one never stores a stale value.
     swiftCode: movement === 'external' ? normalizeSwift(String(input.swiftCode ?? '')) : '',
-    currency: String(input.currency ?? ''),
+    fromAccountId,
+    // The chosen account's own currency is authoritative, never whatever the client sent -
+    // this is what "locks" the request's currency to the account paying it.
+    currency: account ? account.currency : String(input.currency ?? '').trim().toUpperCase(),
     amount: Number(input.amount),
     purpose: String(input.purpose ?? '').trim(),
   };
@@ -88,18 +101,29 @@ export function normalizeInput(input) {
 
 /**
  * @param {Record<string, any>} input
- * @param {{rates: Record<string, number>}} ctx  rate to SAR by currency
+ * @param {{rates: Record<string, number>, seniorApproverIds?: string[], creatorId?: string}} ctx
+ *   rate to SAR by currency, the ids of users who currently hold the `senior_approver` role,
+ *   and whose request it is (they can't be its senior approver)
  * @returns {Record<string, string>}  field name -> i18n key. Empty when valid.
  */
-export function validateRequestInput(input, { rates }) {
+export function validateRequestInput(input, { rates, seniorApproverIds = [], creatorId }) {
   const v = normalizeInput(input);
   /** @type {Record<string, string>} */
   const errors = {};
+  if (v.requesterName.length < 2 || v.requesterName.length > 120) {
+    errors.requesterName = 'validation.requesterName';
+  }
+  if (creatorId && v.seniorApproverId === creatorId) {
+    errors.seniorApproverId = 'validation.selfApprover';
+  } else if (!seniorApproverIds.includes(v.seniorApproverId)) {
+    errors.seniorApproverId = 'validation.seniorApprover';
+  }
   if (v.beneficiary.length < 2 || v.beneficiary.length > 120) {
     errors.beneficiary = 'validation.beneficiary';
   }
   if (v.bank.length > 120) errors.bank = 'validation.bank';
   if (!isValidAccountOrIban(v.iban)) errors.iban = 'validation.iban';
+  if (!accountOf(v.fromAccountId)) errors.fromAccountId = 'validation.fromAccount';
   if (!CATEGORIES.some((c) => c.key === v.category)) errors.category = 'validation.category';
   if (!MOVEMENTS.includes(v.movement)) errors.movement = 'validation.movement';
   if (v.movement === 'external' && !isValidSwift(v.swiftCode)) errors.swiftCode = 'validation.swift';

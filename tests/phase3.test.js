@@ -29,12 +29,12 @@ describe('getRequestDetail', () => {
 
   it('shows the current round separately from earlier rounds', async () => {
     const r = await inBank(w);
-    await w.svc.decideStage(w.who.msayed, r.id, 1, 'reject', 'Please fix the IBAN');
+    await w.svc.decideStage(w.who.husni, r.id, 1, 'reject', 'Please fix the IBAN');
     await w.svc.resubmit(w.who.ahmed, r.id);
     const d = await w.svc.getRequestDetail(w.who.ahmed, r.ref);
     expect(d.request.round).toBe(2);
-    expect(d.approvals).toHaveLength(2);
-    expect(d.currentApprovals).toHaveLength(1);
+    expect(d.approvals).toHaveLength(4);
+    expect(d.currentApprovals).toHaveLength(2);
     expect(d.currentApprovals.every((a) => a.round === 2 && a.status === 'pending')).toBe(true);
   });
 });
@@ -54,9 +54,9 @@ describe('getApprovalQueue', () => {
   it('is empty for someone with nothing to decide, and shrinks once decided', async () => {
     const r = await inBank(w);
     expect((await w.svc.getApprovalQueue(w.who.ahmed)).items).toEqual([]);
-    expect((await w.svc.getApprovalQueue(w.who.msayed)).items).toHaveLength(1);
-    await w.svc.decideStage(w.who.msayed, r.id, 1, 'approve');
-    expect((await w.svc.getApprovalQueue(w.who.msayed)).items).toEqual([]);
+    expect((await w.svc.getApprovalQueue(w.who.husni)).items).toHaveLength(1);
+    await w.svc.decideStage(w.who.husni, r.id, 1, 'approve');
+    expect((await w.svc.getApprovalQueue(w.who.husni)).items).toEqual([]);
   });
 });
 
@@ -165,12 +165,14 @@ describe('the history', () => {
     await w.svc.decideStage(w.who.husni, r.id, 1, 'reject', 'Wrong beneficiary');
     await w.svc.resubmit(w.who.ahmed, r.id);
     await w.svc.recordOnBehalf(w.who.fatima, r.id, 1, 'approve', '', pdf('mail.pdf'));
+    await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
     await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'review', reasons: ['compliance'] });
     await w.svc.markTransferred(w.who.anfal, r.id, 'FT1', [pdf('receipt.pdf')]);
     const log = await w.repo.listLog(r.id);
     const used = new Set(log.map((l) => l.action));
     expect([...used].sort()).toEqual(
       [
+        'approved',
         'approved_on_behalf',
         'bank_created',
         'bank_status',
@@ -201,6 +203,7 @@ describe('the full approval story from the build plan', () => {
     const r = await newRequest(w, { amount: 1850000 });
     await w.svc.markBankCreated(w.who.anfal, r.id, [pdf('bank.pdf')]);
     await w.svc.recordOnBehalf(w.who.fatima, r.id, 1, 'approve', '', pdf('email.pdf'));
+    await w.svc.decideStage(w.who.kharji, r.id, 2, 'approve');
     expect((await w.repo.getRequestById(r.id)).status).toBe('ready');
     const done = await w.svc.markTransferred(w.who.anfal, r.id, 'FT2630155', [pdf('receipt.pdf')]);
     expect(done.status).toBe('transferred');

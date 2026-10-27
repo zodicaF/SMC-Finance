@@ -1,5 +1,5 @@
 /* Layout and base components. Logical properties only (inline-start/end), so Arabic (rtl)
-   and English (ltr) use the same rules. */
+   and English (ltr) use the same rules. Follows the SMC Portals Brand Guideline v1.0. */
 *,
 *::before,
 *::after {
@@ -10,14 +10,16 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--surface-page);
 }
 
 /* Letter-spacing breaks the joined letters of Arabic, so it is switched off there. */
-html[lang='ar'] .eyebrow {
+html[lang='ar'] .eyebrow,
+html[lang='ar'] .wordmark,
+html[lang='ar'] .overline {
   letter-spacing: 0;
   text-transform: none;
 }
@@ -26,7 +28,8 @@ h1,
 h2,
 h3 {
   margin: 0;
-  color: var(--navy-deep);
+  font-family: var(--font-display);
+  color: var(--ink);
   line-height: 1.3;
   text-wrap: balance;
 }
@@ -34,7 +37,7 @@ p {
   margin: 0;
 }
 a {
-  color: var(--blue);
+  color: var(--accent);
 }
 .mono {
   font-family: var(--font-mono);
@@ -42,173 +45,292 @@ a {
   unicode-bidi: isolate;
 }
 .muted {
-  color: var(--ink-soft);
+  color: var(--ink-muted);
 }
 
 :focus-visible {
-  outline: 3px solid var(--brass);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
 .app {
-  max-width: 1320px;
+  max-width: var(--content-max);
   margin-inline: auto;
-  padding: 24px 16px 80px;
+  padding: 28px var(--space-8) var(--space-14);
 }
 
-/* header */
+/* ---- header (SPEC section 6): logo, divider, wordmark; nav in the middle; language
+   switch and avatar at the end. One 64px bar, full width, above the centred app content. ---- */
 .masthead {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 16px;
-  margin-bottom: 14px;
-  border-bottom: 3px double var(--navy-deep);
+  gap: var(--space-4);
+  min-height: var(--header-height);
+  padding-inline: var(--space-8);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+}
+.brand-logo {
+  height: 30px;
+  width: auto;
+  display: block;
+}
+.brand-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+.wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
 }
 .eyebrow {
-  margin: 0 0 6px;
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--brass-deep);
+  color: var(--ink-muted);
 }
-.masthead h1 {
-  font-size: 28px;
+/* page title block: top of the main content area, per SPEC section 6 ("page title, one
+   line of muted context, then content") */
+.page-head {
+  margin-bottom: var(--space-6);
+}
+.page-head h1 {
+  font-size: 34px;
+  line-height: 38px;
   font-weight: 700;
+  letter-spacing: -1px;
 }
 .sub {
   margin-top: 4px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--ink-muted);
 }
 .head-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* entity stripe: directly under the header, three equal bands, SMC Group / Vibes / Media */
+.entity-stripe {
+  display: flex;
+  height: var(--stripe-height);
+}
+.entity-stripe span {
+  flex: 1 1 0;
+}
+.entity-stripe span:nth-child(1) {
+  background: var(--entity-smc);
+}
+.entity-stripe span:nth-child(2) {
+  background: var(--entity-vibes);
+}
+.entity-stripe span:nth-child(3) {
+  background: var(--entity-media);
+}
+
+/* development-only notice under the stripe (CLAUDE.md: visible "development only" banner) */
+.test-banner {
+  margin: 0;
+  padding: 8px var(--space-8);
+  background: var(--warning-panel);
+  border-bottom: 1px solid var(--warning-panel-border);
+  color: var(--warning-panel-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
 }
 
 .lang-toggle {
   display: flex;
   overflow: hidden;
-  background: var(--card);
+  background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 .lang-toggle button {
-  min-height: 44px;
+  min-height: var(--control-md);
   padding: 0 14px;
   border: 0;
   background: transparent;
   font: 600 12.5px var(--font-mono);
-  color: var(--ink-soft);
+  color: var(--ink-muted);
   cursor: pointer;
 }
 .lang-toggle button[aria-pressed='true'] {
-  background: var(--navy-deep);
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
-/* buttons */
+/* 40px round avatar, filled with the person's entity colour (SPEC section 6) */
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-round);
+  background: var(--entity-smc);
+  color: var(--logo-ink);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- buttons (SPEC section 7: Button) ---- */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: var(--control-md);
   padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
   color: var(--ink);
   font: 600 14px var(--font-body);
   text-decoration: none;
   cursor: pointer;
 }
 .btn.primary {
-  background: var(--navy-deep);
-  border-color: var(--navy-deep);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .btn.primary:hover {
-  background: var(--navy-mid);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* tabs */
+/* ---- top nav (middle of the header on desktop) ---- */
 .tabs {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 20px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 0;
 }
 .tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  color: var(--ink-soft);
-  font-size: 13.5px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
   font-weight: 600;
   text-decoration: none;
+  transition: color 0.18s ease;
+}
+.tab:hover {
+  color: var(--ink);
 }
 .tab[aria-current='page'] {
-  background: var(--navy-deep);
-  border-color: var(--navy-deep);
-  color: #fff;
+  color: var(--accent-ink);
+}
+/* Behind the tabs: one highlight follows the mouse, one slides to the current page.
+   ui/navGlider.js sets their position and size; CSS makes them glide. */
+.nav-hover,
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: -1;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    width 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    height 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    opacity 0.2s ease;
+}
+.nav-hover {
+  background: var(--surface-muted);
+  transition-duration: 0.28s, 0.28s, 0.28s, 0.2s;
+}
+.tabs.hovering .nav-hover,
+.nav-indicator.on {
+  opacity: 1;
+}
+.nav-indicator {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
-/* panels */
+/* ---- panels / cards (SPEC section 7: Card) ---- */
 .panel {
   display: grid;
   gap: 10px;
-  padding: 18px;
-  background: var(--card);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  padding: var(--space-5);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
 }
 .panel.empty {
   justify-items: start;
 }
 
-/* status pills: colour plus text, never colour alone */
+/* ---- status pills: colour plus text, never colour alone (SPEC: Status pill) ---- */
 .pill {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 20px;
-  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
   font-weight: 600;
-  background: var(--paper-deep);
-  color: var(--ink-soft);
+  background: var(--surface-muted);
+  color: var(--ink-2);
 }
 .pill.warn {
-  background: var(--amber-soft);
-  color: var(--amber-deep);
+  background: var(--warning-bg);
+  color: var(--warning-ink);
 }
 .pill.ok {
-  background: var(--green-soft);
-  color: var(--green-deep);
+  background: var(--success-bg);
+  color: var(--success-ink);
 }
 .pill.bad {
-  background: var(--red-soft);
-  color: var(--red-deep);
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 .pill.info {
-  background: var(--blue-soft);
-  color: var(--blue-deep);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 .pill.dark {
-  background: var(--navy-deep);
-  color: #fff;
+  background: var(--success-bg);
+  color: var(--success-ink);
 }
 
 /* "Skip to content": hidden until a keyboard user tabs to it */
@@ -218,9 +340,9 @@ a {
   top: -60px;
   z-index: 2000;
   padding: 10px 16px;
-  border-radius: 8px;
-  background: var(--navy-deep);
-  color: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 .skip-link:focus {
@@ -230,22 +352,34 @@ main:focus {
   outline: none;
 }
 
+.site-footer {
+  padding: 20px var(--space-8) 32px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
 /* Phone: compact header, tabs in a bar at the bottom within thumb reach, 44 px targets */
 @media (max-width: 620px) {
   .app {
     padding: 12px 12px 104px;
   }
+  .site-footer {
+    padding-bottom: 104px;
+  }
   .masthead {
-    align-items: flex-start;
-    gap: 10px;
-    padding-bottom: 12px;
+    min-height: 56px;
+    padding-inline: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
-  .masthead h1 {
-    font-size: 21px;
-  }
-  .eyebrow,
-  .sub {
+  .wordmark,
+  .eyebrow {
     display: none;
+  }
+  .page-head h1 {
+    font-size: 24px;
+    line-height: 28px;
   }
   .head-actions {
     width: 100%;
@@ -254,6 +388,9 @@ main:focus {
   .user-pill {
     flex-wrap: wrap;
   }
+  /* The nav lives inside the header bar on desktop (SPEC section 6); on a phone it
+     becomes a fixed bottom bar instead - same element, position:fixed lifts it out of
+     the header's flow regardless of DOM nesting. */
   .tabs {
     position: fixed;
     inset-inline: 0;
@@ -265,15 +402,14 @@ main:focus {
     gap: 4px;
     margin: 0;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-    background: var(--card);
+    background: var(--surface-card);
     border-top: 1px solid var(--border);
-    box-shadow: 0 -4px 14px rgba(13, 27, 48, 0.08);
+    box-shadow: 0 -4px 14px rgba(22, 24, 29, 0.08);
   }
   .tab {
     justify-content: center;
     min-height: 48px;
     padding: 2px 4px;
-    border-color: transparent;
     font-size: 12.5px;
     line-height: 1.25;
     text-align: center;
@@ -282,7 +418,7 @@ main:focus {
     margin-inline-start: 4px;
   }
   .lang-toggle button {
-    min-height: 44px;
+    min-height: var(--control-md);
   }
   input,
   select,

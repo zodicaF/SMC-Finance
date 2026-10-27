@@ -41,7 +41,3 @@ export function html(strings, ...values) {
   for (let i = 0; i < values.length; i += 1) out += render(values[i]) + strings[i + 1];
   return new SafeHtml(out);
 }
-
-/** Mark a string as already safe. Only for constants you wrote yourself, never for user text.
- * @param {string} s */
-export const raw = (s) => new SafeHtml(s);

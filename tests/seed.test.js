@@ -34,7 +34,10 @@ describe('sample data', () => {
     const byName = Object.fromEntries((await repo.listRequests()).map((r) => [r.beneficiary, r]));
     const fitout = byName['Riyadh Fit-Out LLC'];
     const rows = await repo.listApprovals(fitout.id);
-    expect(rows.map((r) => [r.stageOrder, r.status, r.onBehalf])).toEqual([[1, 'approved', true]]);
+    expect(rows.map((r) => [r.stageOrder, r.status, r.onBehalf])).toEqual([
+      [1, 'approved', true],
+      [2, 'approved', false],
+    ]);
     expect(byName['Najd Logistics'].amountSar).toBe(1500000);
     expect(byName['Gulf Office Supplies'].closedReason).toBe(
       'IBAN does not match the vendor letter',

@@ -42,7 +42,7 @@ export const seedUsers = () => [
     email: 'husni.bakdash@example.test',
     nameEn: 'Husni Bakdash',
     nameAr: 'حسني بكداش',
-    roles: ['approver'],
+    roles: ['senior_approver'],
     active: true,
   },
   {
@@ -50,7 +50,7 @@ export const seedUsers = () => [
     email: 'mohammed.alsayed@example.test',
     nameEn: 'Mohammed Alsayed',
     nameAr: 'محمد السيد',
-    roles: ['approver'],
+    roles: ['senior_approver'],
     active: true,
   },
   {
@@ -58,7 +58,7 @@ export const seedUsers = () => [
     email: 'mohammed.alkharji@example.test',
     nameEn: 'Mohammed Al-Kharji',
     nameAr: 'محمد الخريجي',
-    roles: ['approver'],
+    roles: ['manager_approver'],
     active: true,
   },
   {
@@ -159,7 +159,9 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
         iban: 'SA3510000000123456789012',
         category: 'beneficiary',
         movement: 'internal',
-        currency: 'SAR',
+        fromAccountId: '011-713724-001',
+        requesterName: actor.nameEn,
+        seniorApproverId: U.husni.id,
         purpose: '',
         ...fields,
       },
@@ -195,7 +197,7 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
     {
       beneficiary: 'Najd Logistics',
       amount: 400000,
-      currency: 'USD',
+      fromAccountId: '011-713724-080',
       movement: 'external',
       swiftCode: 'RJHISARI',
       iban: 'SA0380000000608010167519',
@@ -206,7 +208,7 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
   at(1, 60);
   await bankEntry(najd.id, 'bank-entry-najd.pdf');
 
-  // 4 Ready: the single approval recorded on behalf, with evidence
+  // 4 Ready: the senior approval recorded on behalf, with evidence, then the manager approval
   at(3, 0);
   const fitout = await make(
     U.ahmed,
@@ -223,6 +225,8 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
   await bankEntry(fitout.id, 'bank-entry-fitout.pdf');
   at(1, 20);
   await svc.recordOnBehalf(U.fatima, fitout.id, 1, 'approve', '', sampleFile('email-approval.pdf'));
+  at(1, 30);
+  await svc.decideStage(U.kharji, fitout.id, 2, 'approve');
 
   // 5 Created in bank and stalled: no approval decided for a while
   at(14, 0);
@@ -245,6 +249,8 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
   await bankEntry(vat.id, 'bank-entry-vat.pdf');
   at(5, 0);
   await svc.decideStage(U.husni, vat.id, 1, 'approve');
+  at(4, 12);
+  await svc.decideStage(U.kharji, vat.id, 2, 'approve');
   at(1, 0);
   await svc.setBankStatus(U.fatima, vat.id, {
     state: 'review',
@@ -263,6 +269,7 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
       movement: 'external',
       swiftCode: 'RIBLSARI',
       bank: 'Riyad Bank',
+      seniorApproverId: U.msayed.id,
     },
     'invoice-EC-5510.pdf',
   );
@@ -270,6 +277,8 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
   await bankEntry(cement.id, 'bank-entry-cement.pdf');
   at(2, 0);
   await svc.decideStage(U.msayed, cement.id, 1, 'approve');
+  at(1, 30);
+  await svc.decideStage(U.kharji, cement.id, 2, 'approve');
 
   // 8 and 11 Transferred (one this month, one last month)
   const transferFlow = async (daysAgo, actor, fields, doc, ref) => {
@@ -279,6 +288,8 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
     await bankEntry(r.id, `bank-entry-${ref}.pdf`);
     at(daysAgo + 1, 0);
     await svc.decideStage(U.husni, r.id, 1, 'approve');
+    at(daysAgo, -180);
+    await svc.decideStage(U.kharji, r.id, 2, 'approve');
     at(daysAgo, 0);
     await svc.markTransferred(U.anfal, r.id, ref, [sampleFile(`receipt-${ref}.pdf`)]);
     return r;
@@ -308,6 +319,7 @@ export async function loadSampleRequests(repo, { now = new Date().toISOString(),
       movement: 'external',
       swiftCode: 'SABBSARI',
       iban: 'SA0380000000608010167519',
+      seniorApproverId: U.msayed.id,
     },
     'invoice-GOS-114.pdf',
   );

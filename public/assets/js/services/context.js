@@ -3,6 +3,7 @@
 // (`actor`), then its arguments. `deps` holds the repository, the clock and the id maker so
 // tests can control time and ids.
 
+import { DEFAULT_SETTINGS } from '../data/lookups.js';
 import { ConflictError, RuleError } from '../domain/errors.js';
 import { denyReason } from '../domain/permissions.js';
 import { validateFile } from '../domain/validation.js';
@@ -65,11 +66,27 @@ export async function writeLog(deps, actor, request, action, details = {}) {
   });
 }
 
+/** Approval rows grouped by request id, so a list never re-scans all approvals per request.
+ * @param {import('../data/typedefs.js').Approval[]} rows
+ * @returns {Record<string, import('../data/typedefs.js').Approval[]>} */
+export function approvalsByRequest(rows) {
+  /** @type {Record<string, import('../data/typedefs.js').Approval[]>} */
+  const out = {};
+  for (const a of rows) (out[a.requestId] ??= []).push(a);
+  return out;
+}
+
+/** "Stalled after" in working days, from settings. @param {Record<string, string>} settings */
+export function stalledDaysOf(settings) {
+  const n = Number(settings.stalledDays);
+  return n > 0 ? n : DEFAULT_SETTINGS.stalledDays;
+}
+
 /** Maximum file size in MB, from settings. @param {Deps} deps */
 export async function maxFileMb(deps) {
   const settings = await deps.repo.getSettings();
   const mb = Number(settings.maxFileMb);
-  return Number.isFinite(mb) && mb > 0 ? mb : 5;
+  return Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_SETTINGS.maxFileMb;
 }
 
 /**
@@ -100,6 +117,7 @@ export function buildAttachment(deps, actor, request, kind, file) {
       sizeBytes: file.size,
       uploadedById: actor.id,
       uploadedAt: deps.clock(),
+      round: request.round,
     },
     blob: file.blob,
   };

@@ -1,7 +1,7 @@
 // @ts-check
 // Shapes of the data (see docs/DATA_TABLES.md). Types only; nothing to run.
 
-/** @typedef {'creator' | 'bank_ops' | 'approver' | 'admin'} Role */
+/** @typedef {'creator' | 'bank_ops' | 'senior_approver' | 'manager_approver' | 'admin'} Role */
 /** @typedef {'submitted' | 'bank_created' | 'approving' | 'ready' | 'transferred' | 'returned' | 'cancelled'} RequestStatus */
 /** @typedef {'payment_doc' | 'bank_proof' | 'transfer_receipt' | 'approval_evidence' | 'debit_proof'} AttachmentKind */
 /** @typedef {'executing' | 'review' | 'debited'} BankState */
@@ -32,6 +32,7 @@
  * @property {string} swiftCode
  * @property {number} amount
  * @property {string} currency
+ * @property {string} [fromAccountId]  the company account it is paid from
  */
 
 /**
@@ -48,6 +49,10 @@
  * @property {string} beneficiary
  * @property {string} bank
  * @property {string} iban
+ * @property {string} fromAccountId  which of the company's own accounts the request pays from
+ * @property {string} requesterName  who this request is actually for, typed by whoever is signed in
+ * @property {string} seniorApproverId  the specific senior approver the requester assigned; stage 1
+ *   of the approval round can only be decided by this person (or recorded on their behalf)
  * @property {string} category
  * @property {'internal' | 'external'} movement
  * @property {string} swiftCode  required for `external`, empty for `internal`
@@ -78,6 +83,8 @@
  * @property {string | null} evidenceId
  * @property {string | null} note
  * @property {string | null} decidedAt
+ * @property {string | null} assignedToId  stage 1 (senior): the requester's chosen approver, and
+ *   only they may decide it; stage 2 (manager): null, open to anyone holding `manager_approver`
  */
 
 /**
@@ -90,6 +97,7 @@
  * @property {number} sizeBytes
  * @property {string} uploadedById
  * @property {string} uploadedAt
+ * @property {number} [round]  the request's round when the file was added (missing = 1)
  */
 
 /**

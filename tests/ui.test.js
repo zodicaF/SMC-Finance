@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { html, raw, escapeHtml } from '../public/assets/js/ui/html.js';
+import { html, escapeHtml } from '../public/assets/js/ui/html.js';
+import * as htmlModule from '../public/assets/js/ui/html.js';
 import { mount } from '../public/assets/js/ui/dom.js';
 import { t, setLang, getLang, getDir, dictionaryKeys } from '../public/assets/js/i18n/index.js';
 import { fmtAmount, fmtDate, fmtSize } from '../public/assets/js/i18n/format.js';
@@ -25,8 +26,8 @@ describe('html template (the injection guard)', () => {
     expect(html`${0}|${'<b>'}`.toString()).toBe('0|&lt;b&gt;');
     expect(escapeHtml('<')).toBe('&lt;');
   });
-  it('raw() is the explicit opt-out', () => {
-    expect(html`${raw('<b>x</b>')}`.toString()).toBe('<b>x</b>');
+  it('offers no way to mark a plain string as safe markup', () => {
+    expect(Object.keys(htmlModule).sort()).toEqual(['SafeHtml', 'escapeHtml', 'html']);
   });
   it('mount() refuses a plain string', () => {
     expect(() => mount({ innerHTML: '' }, '<b>x</b>')).toThrow(TypeError);

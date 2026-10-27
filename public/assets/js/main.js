@@ -2,11 +2,12 @@
 // Start-up: language, sign-in, the page shell (header, tabs, user), and the router.
 
 import { t, setLang, getLang, getDir, LANGS } from './i18n/index.js';
-import { personName } from './i18n/labels.js';
+import { personName, initials } from './i18n/labels.js';
 import { html } from './ui/html.js';
 import { mount, delegate } from './ui/dom.js';
 import { showToast } from './ui/toast.js';
 import { confirmDialog } from './ui/dialog.js';
+import { attachGlider } from './ui/navGlider.js';
 import { startRouter, requestHash } from './router.js';
 import { createApp } from './appContext.js';
 import { canDo, hasRole } from './domain/permissions.js';
@@ -27,7 +28,7 @@ const LANG_KEY = 'tt-lang';
  */
 const TABS = [
   ['board', 'nav.board', () => true],
-  ['approvals', 'nav.approvals', (u) => hasRole(u, 'approver')],
+  ['approvals', 'nav.approvals', (u) => hasRole(u, 'senior_approver') || hasRole(u, 'manager_approver')],
   ['bank', 'nav.bank', () => true],
   ['admin', 'nav.admin', (u) => canDo('admin', u)],
 ];
@@ -53,6 +54,9 @@ let cleanupView = null;
 /** @type {Record<string, number>} */
 const savedScroll = {};
 let cameFromRequest = false;
+/** The sliding highlights behind the top menu; replaced whenever the header is redrawn.
+ * @type {ReturnType<typeof attachGlider> | null} */
+let navGlider = null;
 
 const root = /** @type {HTMLElement} */ (document.getElementById('root'));
 
@@ -96,6 +100,8 @@ function showFatal(err) {
 
 async function renderSignInScreen() {
   stopView();
+  navGlider?.destroy();
+  navGlider = null;
   renderSignIn(root, { choices: await app.auth.listSignInChoices() });
 }
 
@@ -104,53 +110,66 @@ function renderShell() {
   const me = user;
   const lang = getLang();
   const tabs = TABS.filter(([, , visible]) => visible(me));
+  navGlider?.destroy();
+  navGlider = null;
   mount(
     root,
     html`<a class="skip-link" href="#view" data-action="skip">${t('nav.skip')}</a>
-      <div class="app">
-        <header class="masthead">
-          <div>
-            <p class="eyebrow">${t('app.eyebrow')}</p>
-            <h1>${t('app.title')}</h1>
-            <p class="sub">${t('app.sub')}</p>
-          </div>
-          <div class="head-actions">
-            <div class="user-pill">
-              <span class="user-name">${personName(me, lang)}</span>
-              ${me.roles.map((r) => html`<span class="pill">${t(`role.${r}`)}</span>`)}
-              <button type="button" class="btn small" data-action="sign-out">
-                ${t('auth.signOut')}
-              </button>
-            </div>
-            <div class="lang-toggle" role="group" aria-label="${t('nav.language')}">
-              ${LANGS.map(
-                (l) => html`<button
-                  type="button"
-                  data-action="lang"
-                  data-lang="${l}"
-                  aria-pressed="${lang === l ? 'true' : 'false'}"
-                >
-                  ${l.toUpperCase()}
-                </button>`,
-              )}
-            </div>
-            ${
-              canDo('create', me)
-                ? html`<button type="button" class="btn primary" data-action="new-request">
-                  ${t('action.newRequest')}
-                </button>`
-                : ''
-            }
-          </div>
-        </header>
+      <header class="masthead">
+        <div class="brand">
+          <img class="brand-logo" src="assets/smc-logo.png" alt="SMC Group" />
+          <span class="brand-divider"></span>
+          <p class="wordmark">${t('app.wordmark')}</p>
+        </div>
         <nav class="tabs" aria-label="${t('nav.main')}">
+          <span class="nav-hover" aria-hidden="true"></span>
+          <span class="nav-indicator" aria-hidden="true"></span>
           ${tabs.map(
             ([name, key]) => html`<a class="tab" href="#/${name}" data-tab="${name}">${t(key)}</a>`,
           )}
         </nav>
+        <div class="head-actions">
+          <div class="lang-toggle" role="group" aria-label="${t('nav.language')}">
+            ${LANGS.map(
+              (l) => html`<button
+                type="button"
+                data-action="lang"
+                data-lang="${l}"
+                aria-pressed="${lang === l ? 'true' : 'false'}"
+              >
+                ${l.toUpperCase()}
+              </button>`,
+            )}
+          </div>
+          <div class="user-pill">
+            <span class="avatar" aria-hidden="true">${initials(me, lang)}</span>
+            <span class="user-name">${personName(me, lang)}</span>
+            <button type="button" class="btn small" data-action="sign-out">
+              ${t('auth.signOut')}
+            </button>
+          </div>
+          ${
+            canDo('create', me)
+              ? html`<button type="button" class="btn primary" data-action="new-request">
+                ${t('action.newRequest')}
+              </button>`
+              : ''
+          }
+        </div>
+      </header>
+      <div class="entity-stripe"><span></span><span></span><span></span></div>
+      <p class="test-banner" role="note">${t('app.testBanner')}</p>
+      <div class="app">
+        <div class="page-head">
+          <h1>${t('app.title')}</h1>
+          <p class="sub">${t('app.sub')}</p>
+        </div>
         <main id="view" tabindex="-1"></main>
-      </div>`,
+      </div>
+      <footer class="site-footer">${t('app.footer', { year: String(new Date().getFullYear()) })}</footer>`,
   );
+  const nav = /** @type {HTMLElement | null} */ (root.querySelector('.tabs'));
+  if (nav) navGlider = attachGlider(nav, '.tab');
   renderView();
   refreshApprovalBadge();
 }
@@ -200,6 +219,7 @@ function renderView() {
     if (tab.getAttribute('data-tab') === current) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   });
+  navGlider?.place();
 }
 
 /** The red number on "My approvals". */
@@ -215,6 +235,7 @@ async function refreshApprovalBadge() {
       badge.textContent = String(waiting);
       tab.append(badge);
     }
+    navGlider?.place(); // the badge changes the tab's width
   } catch (err) {
     console.error(err);
   }
@@ -254,6 +275,10 @@ delegate(root, 'click', {
   'sign-out': async () => {
     await app.auth.signOut();
     user = null;
+    // The next person starts on their own board, not on the page the last person had open
+    // (which they may not be allowed to see). replaceState: no hashchange, no history entry.
+    history.replaceState(null, '', '#/board');
+    route = { name: 'board', params: {} };
     renderSignInScreen();
   },
   pick: async (el) => {

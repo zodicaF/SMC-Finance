@@ -46,11 +46,20 @@ export function createApprovalServices(deps) {
     checkVersion(request, version);
     allow('markBankCreated', actor, request);
     await checkFiles(deps, proofFiles);
-    const existing = (await repo.listAttachments(id)).filter((a) => a.kind === 'bank_proof');
+    // Only proof from this round counts: after a resubmit with new payment details, bank ops
+    // must prove the new entry (SPEC 4.5). Files saved before rounds were recorded are round 1.
+    const existing = (await repo.listAttachments(id)).filter(
+      (a) => a.kind === 'bank_proof' && (a.round ?? 1) === request.round,
+    );
     if (proofFiles.length === 0 && existing.length === 0)
       throw new RuleError('validation.bankProof');
 
-    const rows = buildApprovalRows({ requestId: id, round: request.round, newId });
+    const rows = buildApprovalRows({
+      requestId: id,
+      round: request.round,
+      newId,
+      seniorApproverId: request.seniorApproverId,
+    });
 
     const now = clock();
     const saved = await repo.updateRequest(
@@ -91,6 +100,7 @@ export function createApprovalServices(deps) {
     onBehalf,
     evidence,
   }) {
+    if (decision !== 'approve' && decision !== 'reject') throw new RuleError('errors.badDecision');
     const now = clock();
     const rejected = decision === 'reject';
     const decided = {
