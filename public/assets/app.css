@@ -148,6 +148,36 @@ a {
   background: var(--entity-media);
 }
 
+/* shown by assets/js/bootCheck.js when the app fails to start */
+.boot-error {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 720px;
+  margin: var(--space-14) auto;
+  padding: var(--space-6);
+  background: var(--surface-card);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-lg);
+}
+.boot-error h1,
+.boot-error h2 {
+  font-size: 20px;
+}
+.boot-error pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  font: 12px/1.5 var(--font-mono);
+  direction: ltr;
+  text-align: left;
+}
+.boot-error .btn {
+  justify-self: start;
+}
+
 /* development-only notice under the stripe (CLAUDE.md: visible "development only" banner) */
 .test-banner {
   margin: 0;
