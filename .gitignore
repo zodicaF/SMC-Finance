@@ -9,3 +9,6 @@ coverage/
 # Internal docs - not part of the public repo
 docs/
 CLAUDE.md
+
+# Source artwork; the app uses public/assets/smc-logo.png
+SMC Group Logo.png

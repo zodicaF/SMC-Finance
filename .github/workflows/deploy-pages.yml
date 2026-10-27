@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   pages: write
   id-token: write
 
@@ -14,16 +15,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A push that breaks lint, types or tests never reaches the site.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm test
+
   deploy:
+    needs: check
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # GitHub Pages lets browsers cache files for ~10 minutes, so right after a deploy a browser
+      # could mix old and new JavaScript modules. Each deploy therefore serves its scripts and
+      # styles from a folder named after the commit; index.html points there. Images that the
+      # scripts reference (assets/smc-logo.png) are still served from the root copy.
+      - name: Build versioned site
+        run: |
+          v="v-${GITHUB_SHA::8}"
+          mkdir -p _site "_site/$v"
+          cp -r public/. _site/
+          cp -r public/assets public/fonts "_site/$v/"
+          sed -i -E "s#(href|src)=\"assets/#\1=\"$v/assets/#g" _site/index.html
+          grep -q "$v/assets/js/main.js" _site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
