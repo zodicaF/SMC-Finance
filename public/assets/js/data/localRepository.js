@@ -46,7 +46,12 @@ export function createLocalRepository({
         for (const [idx, keyPath, opts] of def.indexes ?? []) os.createIndex(idx, keyPath, opts);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // When another tab needs to delete or upgrade the database, let go instead of blocking
+      // it (that tab would otherwise wait forever and show a blank page).
+      req.result.onversionchange = () => req.result.close();
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
 

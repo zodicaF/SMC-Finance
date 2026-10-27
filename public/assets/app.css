@@ -174,8 +174,10 @@ a {
   direction: ltr;
   text-align: left;
 }
-.boot-error .btn {
-  justify-self: start;
+.boot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 /* development-only notice under the stripe (CLAUDE.md: visible "development only" banner) */

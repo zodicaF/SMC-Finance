@@ -39,14 +39,41 @@
       return el;
     };
     add('h1', 'تعذّر تشغيل التطبيق', 'ar');
-    add('p', 'اضغط Ctrl + F5 لإعادة التحميل. إن استمرت المشكلة فأرسل التفاصيل أدناه إلى فريق تقنية المعلومات.', 'ar');
+    add(
+      'p',
+      'أغلق أي نافذة أخرى مفتوحة على هذا التطبيق ثم اضغط Ctrl + F5. إن استمرت المشكلة فاضغط "إعادة ضبط بيانات التجربة"، أو أرسل التفاصيل أدناه إلى فريق تقنية المعلومات.',
+      'ar',
+    );
     add('h2', "The app didn't start", 'en');
-    add('p', 'Press Ctrl + F5 to reload. If it keeps happening, send the details below to IT.', 'en');
+    add(
+      'p',
+      'Close any other tab with this app open, then press Ctrl + F5. If it keeps happening, press "Reset test data", or send the details below to IT.',
+      'en',
+    );
     add('pre', problems.length ? problems.join('\n') : 'No error was reported; the start-up did not finish.');
-    const button = add('button', 'Reload · إعادة التحميل');
-    button.setAttribute('type', 'button');
-    button.className = 'btn primary';
-    button.addEventListener('click', () => window.location.reload());
+    const actions = document.createElement('div');
+    actions.className = 'boot-actions';
+    box.append(actions);
+    /** @param {string} text @param {string} cls @param {() => void} onClick */
+    const button = (text, cls, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = cls;
+      b.textContent = text;
+      b.addEventListener('click', onClick);
+      actions.append(b);
+    };
+    button('Reload · إعادة التحميل', 'btn primary', () => window.location.reload());
+    // Test phase only: the data lives in this browser. Same database name as appContext.js.
+    button('Reset test data · إعادة ضبط بيانات التجربة', 'btn', () => {
+      try {
+        sessionStorage.clear();
+      } catch {
+        /* storage blocked: nothing to clear */
+      }
+      const req = indexedDB.deleteDatabase('transfer-tracker');
+      req.onsuccess = req.onerror = req.onblocked = () => window.location.reload();
+    });
     root.append(box);
   }, 6000);
 })();
