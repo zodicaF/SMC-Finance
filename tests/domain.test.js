@@ -10,6 +10,7 @@ import {
 } from '../public/assets/js/domain/rules.js';
 import {
   isValidAccountOrIban,
+  accountOrIbanProblem,
   isValidReason,
   isValidSwift,
   normalizeIban,
@@ -185,6 +186,18 @@ describe('validation (SPEC 7)', () => {
     expect(isValidAccountOrIban('608010167519')).toBe(true); // a plain account number
     expect(isValidAccountOrIban('6080101')).toBe(false); // too short for an account number
     expect(isValidAccountOrIban('ABCDEFGH')).toBe(false); // letters, not digits
+  });
+  it('accepts an IBAN typed with Arabic digits, dashes or copied with hidden direction marks', () => {
+    expect(isValidAccountOrIban('SA٠٣٨٠٠٠٠٠٠٠٦٠٨٠١٠١٦٧٥١٩')).toBe(true);
+    expect(isValidAccountOrIban('SA۰۳۸۰۰۰۰۰۰۰۶۰۸۰۱۰۱۶۷۵۱۹')).toBe(true);
+    expect(isValidAccountOrIban('‎SA03-8000-0000-6080-1016-7519‏')).toBe(true);
+    expect(isValidAccountOrIban('sa03 8000 0000 6080 1016 7519')).toBe(true);
+  });
+  it('tells a wrong shape apart from a mistyped digit', () => {
+    expect(accountOrIbanProblem('SA0380000000608010167519')).toBeNull();
+    expect(accountOrIbanProblem('SA1234567890123456789012')).toBe('validation.ibanCheck');
+    expect(accountOrIbanProblem('SA12345')).toBe('validation.iban');
+    expect(accountOrIbanProblem('')).toBe('validation.iban');
     expect(normalizeIban(' sa03 8000 ')).toBe('SA038000');
   });
   it('requires a valid SWIFT/BIC code only for external transfers', () => {

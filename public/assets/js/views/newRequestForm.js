@@ -313,7 +313,14 @@ async function openRequestForm(ctx, existing) {
   }
   /** @param {string} name @param {string | undefined} key */
   const setError = (name, key) => setErrorText(name, key ? t(key) : '');
-  const validateAll = () => validateRequestInput(values(), { rates: form.rates });
+  // Same inputs as the service's check: without the list of senior approvers, every choice in
+  // the picker would be reported as missing.
+  const validateAll = () =>
+    validateRequestInput(values(), {
+      rates: form.rates,
+      seniorApproverIds: form.seniorApprovers.map((/** @type {any} */ a) => a.id),
+      creatorId: existing?.createdById ?? ctx.user.id,
+    });
 
   /** @param {Record<string, string>} errors */
   function showAll(errors) {

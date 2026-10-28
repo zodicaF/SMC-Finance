@@ -66,6 +66,8 @@ export const en = {
   'validation.bank': 'Keep the bank name under 120 characters',
   'validation.iban':
     'Enter a valid account number or IBAN (Saudi IBANs start with SA followed by 22 digits)',
+  'validation.ibanCheck':
+    "This IBAN's check digits don't match, so a digit is probably mistyped. Copy it again from the beneficiary's bank details.",
   'validation.fromAccount': 'Choose which account this pays from',
   'validation.requesterName': 'Enter the requester name (2-120 characters)',
   'validation.seniorApprover': 'Choose who should give the senior approval',

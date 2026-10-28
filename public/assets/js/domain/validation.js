@@ -14,8 +14,18 @@ import {
 
 export const MIN_REASON_LENGTH = 5;
 
-/** Uppercase, no spaces. @param {string} iban */
-export const normalizeIban = (iban) => (iban ?? '').replace(/\s+/g, '').toUpperCase();
+/**
+ * Uppercase, Latin digits, nothing but letters and digits. Arabic or Persian digits typed on an
+ * Arabic keyboard become 0-9; spaces, dashes and the invisible direction marks that come along
+ * when copying from an Arabic page are dropped.
+ * @param {string} iban
+ */
+export const normalizeIban = (iban) =>
+  (iban ?? '')
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[\s\u00A0\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF-]/g, '')
+    .toUpperCase();
 
 /**
  * The real check-digit algorithm banks use for an IBAN (ISO 7064 MOD-97-10): move the first
@@ -42,20 +52,27 @@ const isPlainAccountNumber = (v) => /^\d{8,24}$/.test(v);
 
 /**
  * Required. Either a real IBAN — Saudi: `SA` + 22 digits; other countries: the same ISO 13616
- * shape — with its check digits verified, or a plain account number.
+ * shape — with its check digits verified, or a plain account number. Returns the message key
+ * for what is wrong, telling a wrong shape apart from check digits that don't match (the
+ * number has the right shape but a digit is mistyped).
  * @param {string} value
+ * @returns {'validation.iban' | 'validation.ibanCheck' | null}
  */
-export function isValidAccountOrIban(value) {
+export function accountOrIbanProblem(value) {
   const v = normalizeIban(value);
-  if (v === '') return false;
+  if (v === '') return 'validation.iban';
   if (/^[A-Z]{2}\d/.test(v)) {
     const shapeOk = v.startsWith('SA')
       ? /^SA\d{22}$/.test(v)
       : /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(v);
-    return shapeOk && ibanChecksumValid(v);
+    if (!shapeOk) return 'validation.iban';
+    return ibanChecksumValid(v) ? null : 'validation.ibanCheck';
   }
-  return isPlainAccountNumber(v);
+  return isPlainAccountNumber(v) ? null : 'validation.iban';
 }
+
+/** @param {string} value */
+export const isValidAccountOrIban = (value) => accountOrIbanProblem(value) === null;
 
 /** A reason for rejecting or cancelling. @param {string} text */
 export const isValidReason = (text) => (text ?? '').trim().length >= MIN_REASON_LENGTH;
@@ -122,7 +139,8 @@ export function validateRequestInput(input, { rates, seniorApproverIds = [], cre
     errors.beneficiary = 'validation.beneficiary';
   }
   if (v.bank.length > 120) errors.bank = 'validation.bank';
-  if (!isValidAccountOrIban(v.iban)) errors.iban = 'validation.iban';
+  const ibanProblem = accountOrIbanProblem(v.iban);
+  if (ibanProblem) errors.iban = ibanProblem;
   if (!accountOf(v.fromAccountId)) errors.fromAccountId = 'validation.fromAccount';
   if (!CATEGORIES.some((c) => c.key === v.category)) errors.category = 'validation.category';
   if (!MOVEMENTS.includes(v.movement)) errors.movement = 'validation.movement';
