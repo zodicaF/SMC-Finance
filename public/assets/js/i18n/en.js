@@ -55,6 +55,7 @@ export const en = {
     "The manager approval can't be recorded on someone's behalf. A manager approver must decide it in the app.",
   'errors.inactive': 'Your account is not active',
   'errors.conflict': 'Someone else just updated this request. Reload and try again.',
+  'errors.nothingChanged': 'Nothing has changed, so there is nothing to save',
   'errors.notFound': "The request doesn't exist or you can't open it",
   'errors.validation': 'Fix the highlighted fields',
   'errors.selfLockout': "You can't remove your own admin role or deactivate your own account",

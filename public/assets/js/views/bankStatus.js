@@ -12,7 +12,12 @@ import { fmtAmount, fmtDate, fmtSize } from '../i18n/format.js';
 import { personName } from '../i18n/labels.js';
 import { BANK_STATES, REASONS, labelOf } from '../data/lookups.js';
 import { canDo } from '../domain/permissions.js';
-import { defaultBankFilters, filterBankItems, hasActiveBankFilters } from '../domain/bankList.js';
+import {
+  bankStatusChanged,
+  defaultBankFilters,
+  filterBankItems,
+  hasActiveBankFilters,
+} from '../domain/bankList.js';
 import { requestHash } from '../router.js';
 
 const FILE_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
@@ -98,6 +103,21 @@ export function render(container, ctx) {
     const b = item.bankStatus;
     draft = { state: b.state, reasons: [...b.reasons], note: b.note, followedUp: b.followedUp };
     draftFor = item.request.id;
+  }
+
+  /** Something to save: the draft differs from what is saved, or a proof file was chosen. */
+  function canSave() {
+    const item = selectedItem();
+    if (!item) return false;
+    const files = /** @type {HTMLInputElement | null} */ (el('bank-proof-file'))?.files;
+    return bankStatusChanged(item.bankStatus, draft) || (!!files && files.length > 0);
+  }
+
+  /** Greys out "Save update" while there is nothing new. Only the attribute changes, never the
+   * button itself, so a click that is already under way is not lost. */
+  function updateSaveButton() {
+    const button = el('bank-save');
+    if (button && !busy) button.disabled = !canSave();
   }
 
   // ---- drawing ----------------------------------------------------------------------------
@@ -235,7 +255,13 @@ export function render(container, ctx) {
               : ''
           }
           <div class="stage-actions">
-            <button type="button" class="btn primary" id="bank-save" data-action="save">
+            <button
+              type="button"
+              class="btn primary"
+              id="bank-save"
+              data-action="save"
+              ${bankStatusChanged(b, draft) ? '' : 'disabled'}
+            >
               ${t('bank.save')}
             </button>
             <a class="btn" href="${requestHash(r.ref)}">${t('bank.openRequest')}</a>
@@ -356,7 +382,7 @@ export function render(container, ctx) {
 
   async function save() {
     const item = selectedItem();
-    if (!item || busy) return;
+    if (!item || busy || !canSave()) return;
     if (draft.state === 'review' && draft.reasons.length === 0) {
       const slot = el('bank-reason-err');
       if (slot) slot.textContent = t('validation.reviewReasons');
@@ -385,13 +411,11 @@ export function render(container, ctx) {
         drawEditor();
       } else {
         showToast(errorText(err), { error: true });
-        if (button) {
-          button.disabled = false;
-          button.textContent = t('bank.save');
-        }
+        if (button) button.textContent = t('bank.save');
       }
     } finally {
       busy = false;
+      updateSaveButton();
     }
   }
 
@@ -432,6 +456,7 @@ export function render(container, ctx) {
       draw();
     } else if (target.id === 'bank-note') {
       draft.note = target.value; // no redraw while typing
+      updateSaveButton();
     }
   };
   /** @param {Event} event */
@@ -452,11 +477,14 @@ export function render(container, ctx) {
         : draft.reasons.filter((k) => k !== target.value);
       const slot = el('bank-reason-err');
       if (slot && draft.reasons.length > 0) slot.textContent = '';
+      updateSaveButton();
     } else if (target.id === 'bank-followed') {
       draft.followedUp = target.checked;
+      updateSaveButton();
     } else if (target.id === 'bank-proof-file') {
       const slot = el('bank-proof-err');
       if (slot && target.files && target.files.length > 0) slot.textContent = '';
+      updateSaveButton();
     }
   };
   container.addEventListener('input', onInput);

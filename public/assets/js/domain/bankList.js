@@ -28,6 +28,26 @@ const STATE_ORDER = { review: 0, executing: 1, debited: 2 };
 export const needsFollowUp = (b) => !b.followedUp && b.state !== 'debited';
 
 /**
+ * Would saving this change anything? Saving the same status again would only add a
+ * misleading line to the history, so it is refused. Reasons only count while held for review
+ * (the service drops them otherwise); their order does not matter. New proof files are a
+ * change on their own, so callers check those separately.
+ * @param {BankStatus} saved
+ * @param {{state: string, reasons?: string[], note?: string, followedUp?: boolean}} input
+ */
+export function bankStatusChanged(saved, input) {
+  /** @param {string[] | undefined} list */
+  const reasons = (list) =>
+    input.state === 'review' ? [...new Set(list ?? [])].sort().join('|') : '';
+  return (
+    saved.state !== input.state ||
+    reasons(saved.reasons) !== reasons(input.reasons) ||
+    (saved.note ?? '').trim() !== (input.note ?? '').trim() ||
+    !!saved.followedUp !== !!input.followedUp
+  );
+}
+
+/**
  * @param {{request: Request, bankStatus: BankStatus}[]} items
  * @param {BankFilters} filters
  */

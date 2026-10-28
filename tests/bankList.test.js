@@ -7,6 +7,7 @@ import {
   filterBankItems,
   hasActiveBankFilters,
   needsFollowUp,
+  bankStatusChanged,
 } from '../public/assets/js/domain/bankList.js';
 
 const row = (ref, beneficiary, state, followedUp, changed) => ({
@@ -51,6 +52,32 @@ describe('filterBankItems', () => {
   it('knows when a filter is active', () => {
     expect(hasActiveBankFilters(defaultBankFilters())).toBe(false);
     expect(hasActiveBankFilters({ ...defaultBankFilters(), search: 'x' })).toBe(true);
+  });
+});
+
+describe('bankStatusChanged', () => {
+  const saved = {
+    state: 'review',
+    reasons: ['compliance', 'docs_missing'],
+    note: 'Bank asked for the notice',
+    followedUp: false,
+  };
+  const same = { ...saved, reasons: ['docs_missing', 'compliance'], note: ' Bank asked for the notice ' };
+
+  it('sees no change when only the order of reasons or spaces around the note differ', () => {
+    expect(bankStatusChanged(saved, same)).toBe(false);
+  });
+
+  it('sees a change in the status, the reasons, the note or the follow-up tick', () => {
+    expect(bankStatusChanged(saved, { ...same, state: 'debited' })).toBe(true);
+    expect(bankStatusChanged(saved, { ...same, reasons: ['compliance'] })).toBe(true);
+    expect(bankStatusChanged(saved, { ...same, note: 'Sent the notice' })).toBe(true);
+    expect(bankStatusChanged(saved, { ...same, followedUp: true })).toBe(true);
+  });
+
+  it('ignores reasons outside "under review", where they are not kept', () => {
+    const debited = { state: 'debited', reasons: [], note: '', followedUp: false };
+    expect(bankStatusChanged(debited, { state: 'debited', reasons: ['compliance'] })).toBe(false);
   });
 });
 
@@ -128,6 +155,43 @@ describe('getBankList', () => {
     await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'review', reasons: ['compliance'] });
     await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'debited' });
     expect((await w.svc.getBankList(w.who.anfal)).items[0].bankStatus.state).toBe('debited');
+  });
+
+  it('refuses saving the same status again, so the history gets no repeated lines', async () => {
+    const r = await ready(w);
+    await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'debited' }, undefined, [pdf()]);
+    expect(await errorKey(w.svc.setBankStatus(w.who.anfal, r.id, { state: 'debited' }))).toBe(
+      'errors.nothingChanged',
+    );
+    // a new Ready request is already "executing": saving that alone changes nothing either
+    const fresh = await ready(w);
+    expect(
+      await errorKey(w.svc.setBankStatus(w.who.anfal, fresh.id, { state: 'executing' })),
+    ).toBe('errors.nothingChanged');
+    const { items } = await w.svc.getBankList(w.who.anfal);
+    const history = items.find((i) => i.request.id === r.id).history;
+    expect(history.map((e) => e.details.to)).toEqual(['debited']);
+  });
+
+  it('still saves when only the note, the follow-up tick or a new proof file changes', async () => {
+    const r = await ready(w);
+    await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'debited' }, undefined, [pdf()]);
+    await w.svc.setBankStatus(w.who.anfal, r.id, { state: 'debited', note: 'Confirmed by SAB' });
+    await w.svc.setBankStatus(w.who.anfal, r.id, {
+      state: 'debited',
+      note: 'Confirmed by SAB',
+      followedUp: true,
+    });
+    await w.svc.setBankStatus(
+      w.who.anfal,
+      r.id,
+      { state: 'debited', note: 'Confirmed by SAB', followedUp: true },
+      undefined,
+      [pdf('statement.pdf')],
+    );
+    const { items } = await w.svc.getBankList(w.who.anfal);
+    expect(items[0].history).toHaveLength(4);
+    expect(items[0].debitProofs).toHaveLength(2);
   });
 
   it('refuses a stale version with a conflict', async () => {

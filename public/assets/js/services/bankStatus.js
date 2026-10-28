@@ -3,6 +3,7 @@
 
 import { RuleError } from '../domain/errors.js';
 import { denyReason } from '../domain/permissions.js';
+import { bankStatusChanged } from '../domain/bankList.js';
 import { BANK_STATES, REASONS } from '../data/lookups.js';
 import {
   allow,
@@ -51,6 +52,9 @@ export function createBankStatusServices(deps) {
 
     const now = clock();
     const current = (await repo.getBankStatus(id)) ?? newBankStatus(id);
+    if (proofFiles.length === 0 && !bankStatusChanged(current, input)) {
+      throw new RuleError('errors.nothingChanged');
+    }
     const followedUp = !!input.followedUp;
     // Following up records the signed-in user and time once; it is cleared when unticked.
     const keepFollowUp = followedUp && current.followedUp;
