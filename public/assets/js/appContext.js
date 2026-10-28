@@ -15,7 +15,7 @@ const DB_NAME = 'transfer-tracker';
  * examples instead of breaking on data the code no longer expects. (Test phase only; real
  * data will be migrated on the server, never wiped.)
  */
-const DATA_VERSION = '2';
+const DATA_VERSION = '3'; // 3: replaces data seeded several times by tabs starting together
 
 /** Removes this browser's test database. */
 function deleteDatabase() {
@@ -36,10 +36,25 @@ async function seed(repo) {
 }
 
 /**
+ * Runs `fn` while no other tab of this app runs it. Several tabs starting together (Edge
+ * reopening them, a reload during start-up) would otherwise each find the database empty and
+ * each load the examples. Browsers without the Web Locks API just run it.
+ * @template T @param {() => Promise<T>} fn @returns {Promise<T>}
+ */
+function exclusively(fn) {
+  const locks = globalThis.navigator?.locks;
+  return locks ? locks.request('transfer-tracker-test-data', fn) : fn();
+}
+
+/**
  * Opens the test database, seeding a new browser and replacing test data left by an older
  * version of the app. Returns the repository to use and whether the data was replaced.
  */
-async function openTestData() {
+function openTestData() {
+  return exclusively(openTestDataNow);
+}
+
+async function openTestDataNow() {
   let repo = createLocalRepository({ name: DB_NAME });
   const settings = await repo.getSettings();
   if (settings.seeded && settings.dataVersion === DATA_VERSION) return { repo, replaced: false };
